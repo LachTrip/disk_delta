@@ -1,23 +1,49 @@
-import sys
+import argparse
 import datetime
+import tempfile
+import os
 
-from src.disk_delta import DiskDelta
+from disk_delta import DiskDelta
+
 
 def main():
-    if len(sys.argv) < 3:
-        print("Please provide two file paths as arguments.")
-        return
+    parser = argparse.ArgumentParser()
 
-    initial_image_path = sys.argv[1]
-    target_image_path = sys.argv[2]
-    
-    disk_delta = DiskDelta.generate(initial_image_path, target_image_path)
+    parser.add_argument(
+        "-i",
+        "--initial_image_path",
+        help="Path to the initial image",
+        default="input/initial_image.img",
+    )
 
-    current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    output_path = f"output/diskdelta_{current_datetime}"
+    parser.add_argument(
+        "-t",
+        "--target_image_path",
+        help="Path to the target image",
+        default="input/target_image.img",
+    )
 
-    with open(output_path, "w") as f:
-        f.write(disk_delta)
+    now_formatted = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    default_output_path = f"output/diskdelta_{now_formatted}"
+    parser.add_argument(
+        "-o",
+        "--output_path",
+        help="Path to save the disk delta",
+        default=default_output_path,
+    )
+
+    args = parser.parse_args()
+
+    # Generate the disk delta as a binary file
+    disk_delta = DiskDelta(8)
+    delta_message = disk_delta.generate_binary(
+        args.initial_image_path, args.target_image_path
+    )
+
+    # Save the disk delta to a file
+    with open(args.output_path, "wb") as f:
+        f.write(delta_message)
+
 
 if __name__ == "__main__":
     main()
