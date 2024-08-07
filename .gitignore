@@ -168,3 +168,5 @@ data/.Trash-1000/info/target_image.db.trashinfo
 input/initial_image.img
 input/target_image.img
 .vscode/launch.json
+data/initial_image.db
+data/target_image.db

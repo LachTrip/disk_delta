@@ -1,4 +1,5 @@
 from hashlib import sha256
+import index_hash_mapper
 from block_hash_db import BlockHashDB
 
 
@@ -22,47 +23,21 @@ class DiskDelta:
         Returns:
             bytes: The binary delta file representing the changes between the initial and target images.
         """
-        # Create initial and target image tempfiles
-        initial_image_hashes = DiskDelta.hashes_db(self, initial_image_path)
-        target_image_hashes = DiskDelta.hashes_db(self, target_image_path)
+
+        initial_hashes = index_hash_mapper(initial_image_path, self.block_size)
+        target_hashes = index_hash_mapper(target_image_path, self.block_size)
 
         changed_indexes = DiskDelta.find_differences(
-            self, initial_image_hashes, target_image_hashes
+            self, initial_hashes, target_hashes
         )
 
         blocks_in_initial = DiskDelta.indexes_on_disk(
-            self, changed_indexes, initial_image_path, target_image_path
+            self, changed_indexes, initial_hashes
         )
 
         delta_as_binary = b""  # initial_image.delta(target_image)
 
         return delta_as_binary
-
-    def hashes_db(self, file_path):
-        """
-        Stores the hashes of each block in a temporary file.
-        Adds the hash to the database if it does not already exist.
-
-        Args:
-            file_path (str): The path to the file.
-
-        Returns:
-            TemporaryFile: A temporary file object containing the hashes of each block.
-        """
-        with open(file_path, "rb") as file:
-            file_name = file.name.split("/")[-1].split(".")[0]
-            hashes = BlockHashDB(f"data/{file_name}.db")
-            
-            while True:
-                block = file.read(self.block_size)
-                if not block:
-                    break
-                block_hash = sha256(block).digest()
-                if not self.database.hash_exists(block_hash):
-                    self.database.insert_disk_block(block_hash, block)
-                hashes.insert_disk_block(block_hash, block)
-
-        return hashes
 
     def find_differences(self, initial_hashes, updated_hashes):
         """
@@ -75,24 +50,16 @@ class DiskDelta:
         Returns:
             list: A list of indexes where the blocks in the initial file differ from the updated file.
         """
-
         changed_indexes = []
         index = 0
-        with open(initial_file_path, "rb") as init_file:
-            with open(updated_file_path, "rb") as updated_file:
-                while True:
-                    init_block = init_file.read(self.block_size)
-                    updated_block = updated_file.read(self.block_size)
-                    if not init_block:
-                        print(f"End of initial file at index {index}")
-                    if not updated_block:
-                        print(f"End of updated file at index {index}")
-                    if not init_block or not updated_block:
-                        break
-                    if init_block != updated_block:
-                        changed_indexes.append(index)
-                    index += 1
-        return changed_indexes
+        while True:
+            initial_hash = initial_hashes.hash_by_index(index)
+            updated_hash = updated_hashes.hash_by_index(index)
+            if not initial_hash or not updated_hash:
+                break
+            if initial_hash != updated_hash:
+                changed_indexes.append(index)
+            index += 1
 
     def indexes_on_disk(self, indexes, initial_file_path, target_file_path):
         """
