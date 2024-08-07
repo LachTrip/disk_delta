@@ -1,6 +1,5 @@
 from hashlib import sha256
 import index_hash_mapper
-from block_hash_db import BlockHashDB
 
 
 class DiskDelta:
@@ -8,8 +7,7 @@ class DiskDelta:
     A class for generating delta files between an initial image and a target image.
     """
 
-    def __init__(self, block_size=4096, database_path="data/disk_blocks.db"):
-        self.database = BlockHashDB(database_path)
+    def __init__(self, block_size=4096):
         self.block_size = block_size
 
     def generate_binary(self, initial_image_path, target_image_path):
