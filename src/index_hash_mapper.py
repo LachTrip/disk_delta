@@ -1,17 +1,18 @@
 from hashlib import sha256
 from typing import Any
 
-class IndexHashMapper:
+class FileIndexHashMapper:
     '''
     This class is used to map block indexes and their corresponding hashes.
     Hashes can be accesse by the block index and hashes can be used to retrieve a list of block indexes.
     '''
-    def __init__(self, image_path, block_size):
+    def __init__(self, block_size, image_path = ''):
         self.hash_by_index = []
         self.indexes_by_hash = {}
         self.image_path = image_path
         self.block_size = block_size
-        self.load()
+        if image_path:
+            self.load()
 
     def indexes_by_hash(self, hash: Any) -> list:
         '''

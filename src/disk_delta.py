@@ -1,5 +1,7 @@
 from hashlib import sha256
-import index_hash_mapper
+from typing import List
+from index_hash_mapper import FileIndexHashMapper
+from block import Block, BlockDataType
 
 
 class DiskDelta:
@@ -22,22 +24,18 @@ class DiskDelta:
             bytes: The binary delta file representing the changes between the initial and target images.
         """
 
-        initial_hashes = index_hash_mapper(initial_image_path, self.block_size)
-        target_hashes = index_hash_mapper(target_image_path, self.block_size)
+        initial_hashes = FileIndexHashMapper(initial_image_path, self.block_size)
+        target_hashes = FileIndexHashMapper(target_image_path, self.block_size)
 
-        changed_indexes = DiskDelta.find_differences(
+        blocks_to_send = DiskDelta.find_differences(
             self, initial_hashes, target_hashes
-        )
-
-        blocks_in_initial = DiskDelta.indexes_on_disk(
-            self, changed_indexes, initial_hashes
         )
 
         delta_as_binary = b""  # initial_image.delta(target_image)
 
         return delta_as_binary
 
-    def find_differences(self, initial_hashes, updated_hashes):
+    def find_differences(self, initial_hashes, updated_hashes) -> List[Block]:
         """
         Finds the differences between two files by comparing their blocks.
 
@@ -56,8 +54,10 @@ class DiskDelta:
             if not initial_hash or not updated_hash:
                 break
             if initial_hash != updated_hash:
-                changed_indexes.append(index)
+                changed_indexes.append(Block(index, b"", self.block_size))
             index += 1
+
+        return changed_indexes
 
     def indexes_on_disk(self, indexes, initial_file_path, target_file_path):
         """
