@@ -170,3 +170,13 @@ input/target_image.img
 .vscode/launch.json
 data/initial_image.db
 data/target_image.db
+data/hashes_1_32
+data/hashes_8_32
+data/.Trash-1000/files/hashes_8_32
+data/.Trash-1000/files/hashes_8_32.2
+data/.Trash-1000/info/hashes_8_32.2.trashinfo
+data/.Trash-1000/info/hashes_8_32.trashinfo
+output/diskdelta_2024-08-09_16-16-51
+output/diskdelta_2024-08-09_16-20-55
+output/diskdelta_2024-08-09_16-21-02
+output/diskdelta_2024-08-09_16-30-46
