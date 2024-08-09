@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import math
 import tempfile
 import os
 
@@ -34,8 +35,13 @@ def main():
 
     args = parser.parse_args()
 
+    block_size = 1
+    tb = 1024**4
+    # Assuming drive TBW is 100,000 (very high)
+    digest_size = math.ceil(2 * math.log2(100000 * tb / block_size))
+
     # Generate the disk delta as a binary file
-    disk_delta = DiskDelta(8)
+    disk_delta = DiskDelta(block_size, digest_size)
     delta_message = disk_delta.generate_binary(
         args.initial_image_path, args.target_image_path
     )
@@ -44,6 +50,6 @@ def main():
     with open(args.output_path, "wb") as f:
         f.write(delta_message)
 
-
 if __name__ == "__main__":
     main()
+

@@ -16,8 +16,10 @@ class BlockHashStore:
         """
         Load the hashes from the file. Skip block_size
         """
-        filepath = "data/hashes_" + self.block_size + "_" + self.digest_size
+        filepath = "data/hashes_" + str(self.block_size) + "_" + str(self.digest_size)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        if not os.path.exists(filepath):
+            open(filepath, "w").close()
         with open(filepath, "rb") as f:
             index = 0
             while True:
@@ -28,7 +30,7 @@ class BlockHashStore:
                 self.hashes.append(block)
                 index += 1
 
-    def add_hash(self, hash: bytes, data: bytes):
+    def add(self, hash: bytes, data: bytes):
         """
         Add a hash to the store.
         """
@@ -38,7 +40,7 @@ class BlockHashStore:
         with open("data/hashes_" + self.block_size + "_" + self.digest_size, "ab") as f:
             f.write(hash + data)
 
-    def data_by_hash(self, hash: bytes) -> bytes:
+    def get_data_by_hash(self, hash: bytes) -> bytes:
         """
         Get the data associated with a hash.
         """
@@ -50,3 +52,9 @@ class BlockHashStore:
             f.seek(index * (self.block_size + self.digest_size) + self.digest_size)
             data = f.read(self.block_size)
         return data
+
+    def contains_hash(self, hash: bytes) -> bool:
+        """
+        Check if the store contains a hash.
+        """
+        return hash in self.hashes
