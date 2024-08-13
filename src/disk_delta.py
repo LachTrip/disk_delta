@@ -25,19 +25,19 @@ class MessageBlock:
         self.data = data
         self.data_type = data_type
 
-    def to_bitarray(self) -> bitarray:
+    def to_bitarray(self, disk_index_bits, ref_index_bits) -> bitarray:
         match self.data_type:
             case DataType.Literal:
                 bytesData = bitarray()
                 bytesData.frombytes(self.data)
-                return bitarray() + bytesData
+                return bitarray("00") + bytesData
             case DataType.Hash:
-                return bitarray() + bitarray(self.data)
+                return bitarray("01") + bitarray(self.data)
             case DataType.DiskIndex:
-                return bitarray() + bitarray(self.data)
+                return bitarray("10") + bitarray(self.data)
             case DataType.Reference:
                 bytesData = bitarray(self.data)
-                return bitarray() + bytesData
+                return bitarray("11") + bytesData
         raise ValueError("Invalid data type")
 
     def to_string(self) -> str:
@@ -65,18 +65,44 @@ class Message:
     ):
         self.blocks: List[MessageBlock] = []
 
+        image_size = initial_hashes.size()
+        greatest_disk_index = 0
+        greatest_ref_index = 0
+
         index = 0
-        while index < initial_hashes.size():
+        while index < image_size:
             initial_hash = initial_hashes.get_hash_by_index(index)
             updated_hash = target_hashes.get_hash_by_index(index)
-            if not initial_hash or not updated_hash:
-                # Raw images are same size, one is out of blocks then both are
+
+            # Raw images are same size, one is out of blocks then both are
+            if not initial_hash:
                 break
+
+            # If hashes are different, process block
             if initial_hash != updated_hash:
                 self.process_changed_block(
                     index, updated_hash, initial_hashes, target_hashes, store
                 )
+
+                # Update greatest index values
+                changed_block = self.blocks[-1]
+                if changed_block.data_type == DataType.DiskIndex:
+                    greatest_disk_index = max(greatest_disk_index, changed_block.data)
+                elif changed_block.data_type == DataType.Reference:
+                    greatest_ref_index = max(greatest_ref_index, changed_block.data)
+
             index += 1
+
+        # (const) number of bits used to convey bits for indexes in message
+        self.max_index_bits = math.ceil(math.log2(image_size))
+
+        # number of bits needed to index a block in the message
+        self.disk_index_bits = (
+            math.ceil(math.log2(greatest_disk_index)) if greatest_disk_index else 0
+        )
+        self.ref_index_bits = (
+            math.ceil(math.log2(greatest_ref_index)) if greatest_ref_index else 0
+        )
 
     def process_changed_block(
         self,
@@ -123,16 +149,31 @@ class Message:
                 )
 
     def to_bitarray(self) -> bytes:
-        # Convert blocks to bitarray message
+        """
+        Convert blocks to bitarray message
+        """
+
         bitarray_message = bitarray()
+
+        # Add index sizes header
+        bitarray_message += bitarray(f"{self.disk_index_bits:0{self.max_index_bits}b}")
+        bitarray_message += bitarray(f"{self.ref_index_bits:0{self.max_index_bits}b}")
+
         for block in self.blocks:
-            appendable = block.to_bitarray()
-            bitarray_message += appendable
+            bitarray_message += block.to_bitarray(
+                self.disk_index_bits, self.ref_index_bits
+            )
         return bitarray_message
 
     def to_string(self) -> str:
         # Convert blocks to string message
         string_message = ""
+
+        # Add index sizes header
+        string_message += f"Header size: {self.max_index_bits} x 2\n"
+        string_message += f"Disk index size:{self.disk_index_bits}\n"
+        string_message += f"Msg Ref index size:{self.ref_index_bits}\n"
+
         for block in self.blocks:
             string_message += block.to_string()
         return string_message
@@ -169,9 +210,9 @@ class DiskDelta:
         delta_as_bitarray = self.message.to_bitarray()
 
         # Add padding to make the bitarray length a multiple of 8
-        padding_length = 8 - len(delta_as_bitarray) % 8
-        if padding_length != 8:
-            delta_as_bitarray += bitarray(padding_length)
+        # padding_length = 8 - len(delta_as_bitarray) % 8
+        # if padding_length != 8:
+        #     delta_as_bitarray += bitarray(padding_length)
 
         return delta_as_bitarray
 
