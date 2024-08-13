@@ -160,23 +160,8 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
-data/disk_blocks.db
-data/.Trash-1000/files/initial_image.db
-data/.Trash-1000/files/target_image.db
-data/.Trash-1000/info/initial_image.db.trashinfo
-data/.Trash-1000/info/target_image.db.trashinfo
-input/initial_image.img
-input/target_image.img
+
 .vscode/launch.json
-data/initial_image.db
-data/target_image.db
-data/hashes_1_32
-data/hashes_8_32
-data/.Trash-1000/files/hashes_8_32
-data/.Trash-1000/files/hashes_8_32.2
-data/.Trash-1000/info/hashes_8_32.2.trashinfo
-data/.Trash-1000/info/hashes_8_32.trashinfo
-output/diskdelta_2024-08-09_16-16-51
-output/diskdelta_2024-08-09_16-20-55
-output/diskdelta_2024-08-09_16-21-02
-output/diskdelta_2024-08-09_16-30-46
+input/
+output/
+data/
