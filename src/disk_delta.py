@@ -4,7 +4,8 @@ import math
 from typing import Any, List
 from block_hash_store import BlockHashStore
 from index_hash_mapper import IndexHashMapper
-import numpy as np
+from bitarray import bitarray
+
 
 class DataType(Enum):
     Literal = 1
@@ -12,45 +13,57 @@ class DataType(Enum):
     DiskIndex = 3
     Reference = 4
 
-class Block:
+
+class MessageBlock:
     """
-    Index and hash of a block
+    Block ready to be sent.
     """
 
-    def __init__(self, index, hash):
+    def __init__(self, index: int, hash: bytes, data: bytes, data_type: DataType):
         self.index = index
         self.hash = hash
-
-class MessageBlock(Block):
-    """
-    Block ready to be sent
-    """
-
-    def __init__(self, index:int, hash:bytes, data:bytes, data_type:DataType):
-        super().__init__(index, hash)
         self.data = data
         self.data_type = data_type
 
-    def to_binary(self) -> bytes:
+    def to_bitarray(self) -> bitarray:
         match self.data_type:
             case DataType.Literal:
-                return b'\x00' + self.data
+                bytesData = bitarray()
+                bytesData.frombytes(self.data)
+                return bitarray() + bytesData
             case DataType.Hash:
-                return b'\x01' + self.data
+                return bitarray() + bitarray(self.data)
             case DataType.DiskIndex:
-                return b'\x02' + self.data.to_bytes()
+                return bitarray() + bitarray(self.data)
             case DataType.Reference:
-                return b'\x03' + self.data.to_bytes()
+                bytesData = bitarray(self.data)
+                return bitarray() + bytesData
+        raise ValueError("Invalid data type")
+
+    def to_string(self) -> str:
+        match self.data_type:
+            case DataType.Literal:
+                data_string = self.data.decode("utf-8")
+                return f"{self.index}, literal, {data_string}\n"
+            case DataType.Hash:
+                data_string = self.data.hex()
+                return f"{self.index}, hash, {data_string}\n"
+            case DataType.DiskIndex:
+                data_string = self.data
+                return f"{self.index}, diskindex, {data_string}\n"
+            case DataType.Reference:
+                data_string = self.data.decode("utf-8")
+                return f"{self.index}, reference, {data_string}\n"
 
 
-class BlocksMessage:
+class Message:
     def __init__(
         self,
         initial_hashes: IndexHashMapper,
         target_hashes: IndexHashMapper,
         store: BlockHashStore,
     ):
-        self.blocks = []
+        self.blocks: List[MessageBlock] = []
 
         index = 0
         while index < initial_hashes.size():
@@ -60,7 +73,9 @@ class BlocksMessage:
                 # Raw images are same size, one is out of blocks then both are
                 break
             if initial_hash != updated_hash:
-                self.process_changed_block(index, updated_hash, initial_hashes, target_hashes, store)
+                self.process_changed_block(
+                    index, updated_hash, initial_hashes, target_hashes, store
+                )
             index += 1
 
     def process_changed_block(
@@ -75,7 +90,9 @@ class BlocksMessage:
         for block in self.blocks:
             if block.hash == hash:
                 self.blocks.append(
-                    MessageBlock(index, hash, block.data, DataType.Reference)
+                    MessageBlock(
+                        index, hash, self.blocks.index(block), DataType.Reference
+                    )
                 )
                 return
         # Check block is in initial image
@@ -105,12 +122,20 @@ class BlocksMessage:
                     )
                 )
 
-    def to_binary(self) -> bytes:
-        # Convert blocks to binary message
-        binary_message = b""
+    def to_bitarray(self) -> bytes:
+        # Convert blocks to bitarray message
+        bitarray_message = bitarray()
         for block in self.blocks:
-            binary_message += block.to_binary()
-        return binary_message
+            appendable = block.to_bitarray()
+            bitarray_message += appendable
+        return bitarray_message
+
+    def to_string(self) -> str:
+        # Convert blocks to string message
+        string_message = ""
+        for block in self.blocks:
+            string_message += block.to_string()
+        return string_message
 
 
 class DiskDelta:
@@ -118,33 +143,43 @@ class DiskDelta:
     A class for generating delta files between an initial image and a target image.
     """
 
-    def __init__(self, block_size, digest_size):
+    def __init__(self, initial_image_path, target_image_path, block_size, digest_size):
         self.block_size = block_size
         self.digest_size = digest_size
         self.known_blocks = BlockHashStore(self.block_size, sha256().digest_size)
-
-    def generate_binary(self, initial_image_path, target_image_path):
-        """
-        Generates a binary delta file between an initial image and a target image.
-
-        Args:
-            initial_image_path (str): The file path of the initial image.
-            target_image_path (str): The file path of the target image.
-
-        Returns:
-            bytes: The binary delta file representing the changes between the initial and target images.
-        """
-
-        initial_hashes = IndexHashMapper(
+        self.initial_hashes = IndexHashMapper(
             initial_image_path, self.block_size, self.digest_size
         )
-
-        target_hashes = IndexHashMapper(
+        self.target_hashes = IndexHashMapper(
             target_image_path, self.block_size, self.digest_size
         )
 
-        message = BlocksMessage(initial_hashes, target_hashes, self.known_blocks)
+        if self.initial_hashes.size() != self.target_hashes.size():
+            raise ValueError("Initial and target images are not the same size")
 
-        delta_as_binary = message.to_binary()
+        self.message = Message(
+            self.initial_hashes, self.target_hashes, self.known_blocks
+        )
 
-        return delta_as_binary
+    def generate_bitarray(self) -> bitarray:
+        """
+        Generates bitarray representation of the disk delta.
+        """
+
+        delta_as_bitarray = self.message.to_bitarray()
+
+        # Add padding to make the bitarray length a multiple of 8
+        padding_length = 8 - len(delta_as_bitarray) % 8
+        if padding_length != 8:
+            delta_as_bitarray += bitarray(padding_length)
+
+        return delta_as_bitarray
+
+    def generate_string(self) -> str:
+        """
+        Generates string representation of the disk delta.
+        """
+
+        delta_as_string = self.message.to_string()
+
+        return delta_as_string

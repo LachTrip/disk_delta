@@ -40,16 +40,21 @@ def main():
     # Assuming drive TBW is 100,000 (very high)
     digest_size = math.ceil(2 * math.log2(100000 * tb / block_size))
 
-    # Generate the disk delta as a binary file
-    disk_delta = DiskDelta(block_size, digest_size)
-    delta_message = disk_delta.generate_binary(
-        args.initial_image_path, args.target_image_path
+    # Generate the disk delta
+    disk_delta = DiskDelta(
+        args.initial_image_path, args.target_image_path, block_size, digest_size
     )
 
-    # Save the disk delta to a file
-    with open(args.output_path, "wb") as f:
-        f.write(delta_message)
+    # write to file as bits
+    delta_message = disk_delta.generate_bitarray()
+    with open(args.output_path + "_bits", "wb") as f:
+        delta_message.tofile(f)
+
+    # write to file as string
+    delta_message = disk_delta.generate_string()
+    with open(args.output_path + "_str", "wb") as f:
+        f.write(delta_message.encode("utf-8"))
+
 
 if __name__ == "__main__":
     main()
-
