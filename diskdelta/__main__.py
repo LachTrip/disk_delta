@@ -4,7 +4,7 @@ import math
 import tempfile
 import os
 
-from disk_delta import DiskDelta
+from diskdelta import DiskDelta
 
 
 def main():
