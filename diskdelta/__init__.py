@@ -1,16 +1,14 @@
 from hashlib import sha256
 from bitarray import bitarray
 
-import diskdelta
-
-BlockHashStore = diskdelta.block_hash_store.BlockHashStore
-IndexHashMapper = diskdelta.index_hash_mapper.IndexHashMapper
-Message = diskdelta.message.Message
+from diskdelta.block_hash_store import BlockHashStore
+from diskdelta.index_hash_mapper import IndexHashMapper
+from diskdelta.message import Message, MessageBuilder
 
 
 class DiskDelta:
     """
-    A class for generating delta files between an initial image and a target 
+    A class for generating delta files between an initial image and a target
     image.
     """
 
@@ -28,8 +26,10 @@ class DiskDelta:
         if self.initial_hashes.size() != self.target_hashes.size():
             raise ValueError("Initial and target images are not the same size")
 
-        self.message = Message(
-            self.initial_hashes, self.target_hashes, self.known_blocks
+        message_builder = MessageBuilder(self.known_blocks, self.initial_hashes.size())
+
+        self.message = message_builder.build_message(
+            self.initial_hashes, self.target_hashes
         )
 
     def generate_bitarray(self) -> bitarray:
