@@ -46,15 +46,19 @@ def main():
     )
 
     # write to file as bits
-    delta_message = disk_delta.generate_bitarray()
+    bit_message = disk_delta.generate_bitarray()
     with open(args.output_path + "_bits", "wb") as f:
-        delta_message.tofile(f)
+        bit_message.tofile(f)
 
     # write to file as string
-    delta_message = disk_delta.generate_string()
+    str_message = disk_delta.generate_string()
     with open(args.output_path + "_str", "wb") as f:
-        f.write(delta_message.encode("utf-8"))
+        f.write(str_message.encode("utf-8"))
 
+    decoder = disk_delta.get_decoder()
+    reg_message = decoder.get_message_from_bitarray(bit_message)
+
+    disk_delta.apply_message(reg_message, args.initial_image_path, args.output_path + "_reconstructed_image.img")
 
 if __name__ == "__main__":
     main()

@@ -2,8 +2,9 @@ from hashlib import sha256
 from bitarray import bitarray
 
 from diskdelta.block_hash_store import BlockHashStore
+from diskdelta.delta_decoder import DeltaDecoder
 from diskdelta.index_hash_mapper import IndexHashMapper
-from diskdelta.message import Message, MessageBuilder
+from diskdelta.message import Message, MessageBuilder, DataType
 
 
 class DiskDelta:
@@ -54,3 +55,36 @@ class DiskDelta:
         delta_as_string = self.message.to_string()
 
         return delta_as_string
+
+    def get_decoder(self):
+        return DeltaDecoder(self)
+    
+    def apply_message(self, message: Message, initial_image_path: str, output_path: str):
+        """
+        Apply the message to the initial image to reconstruct the target image.
+        """
+        with open(initial_image_path, "rb") as f:
+            with open(output_path, "wb") as out:
+                # Copy the initial image to the output file
+                out.write(f.read())
+
+                # Apply the message to the output file
+                for instruction in message.blocks:
+                    if instruction.data_type == DataType.Literal:
+                        out.seek(instruction.index * self.block_size)
+                        out.write(instruction.data)
+                    elif instruction.data_type == DataType.Hash:
+                        data = self.known_blocks.get_data_by_hash(instruction.data)
+                        out.seek(instruction.index * self.block_size)
+                        out.write(data)
+                    elif instruction.data_type == DataType.DiskIndex:
+                        data = self.initial_hashes.data_by_index(instruction.data)
+                        out.seek(instruction.index * self.block_size)
+                        out.write(data)
+                    elif instruction.data_type == DataType.Reference:
+                        for block in message.blocks:
+                            if block.index == instruction.data:
+                                data = block.data
+                                break
+                        out.seek(instruction.index * self.block_size)
+                        out.write(data)

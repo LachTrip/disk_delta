@@ -8,10 +8,10 @@ from bitarray import bitarray
 
 
 class DataType(Enum):
-    Literal = 1
-    Hash = 2
-    DiskIndex = 3
-    Reference = 4
+    Literal = 0
+    Hash = 1
+    DiskIndex = 2
+    Reference = 3
 
 
 class MessageBlock:
@@ -24,6 +24,16 @@ class MessageBlock:
         self.hash = hash
         self.data = data
         self.data_type = data_type
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, MessageBlock):
+            return False
+        return (
+            self.index == other.index
+            and self.hash == other.hash
+            and self.data == other.data
+            and self.data_type == other.data_type
+        )
 
     def to_bitarray(self, index_bits, disk_index_bits, ref_index_bits) -> bitarray:
         match self.data_type:
@@ -98,6 +108,19 @@ class Message:
             string_message += block.to_string()
         return string_message
 
+    def equals(self, other: Any) -> bool:
+        """
+        Compares two messages for equality.
+        """
+        if not isinstance(other, Message):
+            raise ValueError("Is not a Message object")
+        if len(self.blocks) != len(other.blocks):
+            raise ValueError("Messages are not the same length")
+        for i in range(len(self.blocks)):
+            if self.blocks[i] != other.blocks[i]:
+                return False
+        return True
+
 
 class MessageBuilder:
     def __init__(
@@ -147,61 +170,71 @@ class MessageBuilder:
 
             index += 1
 
-        # (const) bits used to convey bits for indexes in message
-        message.index_bits_bits = math.ceil(math.log2(self.image_size))
 
-        # number of bits needed to index a block in the message
-        if greatest_disk_index:
-            message.disk_index_bits = math.ceil(math.log2(greatest_disk_index))
-        if greatest_ref_index:
-            message.ref_index_bits = math.ceil(math.log2(greatest_ref_index))
+
+        # (const) bits used to convey bits for indexes in message
+        message.index_bits_bits = get_needed_bits(self.image_size)
+
+        # The number of bits needed to index a block in the message. 
+        message.disk_index_bits = get_needed_bits(greatest_disk_index)
+        message.ref_index_bits = get_needed_bits(greatest_ref_index)
 
         return message
 
-    def get_message_from_bitarray(self, bitarr_message: bitarray):
+    def get_message_from_bitarray(self, bitarr_message: bitarray, initial_image: IndexHashMapper) -> Message:
         """
         Create a Message object from a bitarray.
         """
         message = Message()
-        message.index_bits_bits = math.ceil(math.log2(self.image_size))
+        message.index_bits_bits = get_needed_bits(self.image_size - 1)
         ind_size = message.index_bits_bits
 
         # Get the index sizes from the header
         disk_index_bits = int(bitarr_message[:ind_size].to01(), 2)
+        if not disk_index_bits:
+            disk_index_bits = 1
         ref_index_bits = int(bitarr_message[ind_size : ind_size * 2].to01(), 2)
+        if not ref_index_bits:
+            ref_index_bits = 1
+
+        message.disk_index_bits = disk_index_bits
+        message.ref_index_bits = ref_index_bits
 
         # Read bitarray to get message data
         i = ind_size * 2
         while i < len(bitarr_message):
-            # Get the data type
-            data_type = bitarr_message[i : i + 2].to01()
+
+            index = int(bitarr_message[i : i + message.index_bits_bits].to01(), 2)
+            i += message.index_bits_bits
+
+            data_type = int(bitarr_message[i : i + 2].to01(), 2)
             i += 2
 
-            # Get the data
-            if data_type == "00":
+            if data_type == DataType.Literal.value:
                 # Literal
-                index = int(bitarr_message[i : i + message.index_bits_bits].to01(), 2)
-                i += message.index_bits_bits * 8
                 data = bitarr_message[i : i + self.store.block_size * 8].tobytes()
                 i += self.store.block_size * 8
-            elif data_type == "01":
+                hash = sha256(data).digest()
+            elif data_type == DataType.Hash.value:
                 # Hash
-                index = int(bitarr_message[i : i + message.index_bits_bits].to01(), 2)
-                i += message.index_bits_bits * 8
                 data = bitarr_message[i : i + self.store.digest_size * 8].tobytes()
                 i += self.store.digest_size * 8
-            elif data_type == "10":
+                hash = data
+            elif data_type == DataType.DiskIndex.value:
                 # Disk index
-                index = int(bitarr_message[i : i + message.index_bits_bits].to01(), 2)
-                i += message.index_bits_bits * 8
+                if disk_index_bits == 0:
+                    data = 0
                 data = int(bitarr_message[i : i + disk_index_bits].to01(), 2)
                 i += disk_index_bits
-            elif data_type == "11":
+                hash = initial_image.get_hash_by_index(data)
+            elif data_type == DataType.Reference.value:
                 # Reference
-                index = int(bitarr_message[i : i + message.index_bits_bits].to01(), 2)
-                i += message.index_bits_bits * 8
                 data = int(bitarr_message[i : i + ref_index_bits].to01(), 2)
                 i += ref_index_bits
+                for block in message.blocks:
+                    if block.index == data:
+                        hash = block.hash
+                        break
             else:
                 raise ValueError("Invalid data type")
 
@@ -213,6 +246,8 @@ class MessageBuilder:
                     DataType(data_type),
                 )
             )
+
+        return message
 
     def process_changed_block(
         self,
@@ -258,3 +293,13 @@ class MessageBuilder:
                         index, hash, f.read(target_hashes.block_size), DataType.Literal
                     )
                 )
+
+def get_needed_bits(value: int) -> int:
+    """
+    Get the number of bits needed to represent a value.
+    """
+    # We add 1 to the log2 because it will otherwise give the wrong number for 
+    # powers of 2.
+    if value == 0:
+        return 1
+    return math.ceil(math.log2(value + 1))
