@@ -7,9 +7,11 @@ BlockHashStore = diskdelta.block_hash_store.BlockHashStore
 IndexHashMapper = diskdelta.index_hash_mapper.IndexHashMapper
 Message = diskdelta.message.Message
 
+
 class DiskDelta:
     """
-    A class for generating delta files between an initial image and a target image.
+    A class for generating delta files between an initial image and a target 
+    image.
     """
 
     def __init__(self, initial_image_path, target_image_path, block_size, digest_size):

@@ -5,7 +5,8 @@ from typing import Any, List
 class IndexHashMapper:
     """
     This class is used to map block indexes and their corresponding hashes.
-    Hashes can be accesse by the block index and hashes can be used to retrieve a list of block indexes.
+    Hashes can be accesse by the block index and hashes can be used to retrieve 
+    a list of block indexes.
     """
 
     def __init__(self, image_path, block_size, hash_size):
