@@ -36,7 +36,7 @@ class BlockHashStore:
         """
         if hash in self.hashes:
             return
-        self.hashes.append(hash + data)
+        self.hashes.append(hash)
         with open("data/hashes_" + self.block_size + "_" + self.digest_size, "ab") as f:
             f.write(hash + data)
 

@@ -1,9 +1,8 @@
 from enum import Enum
-from hashlib import sha256
 import math
 from typing import Any, List
 from diskdelta.block_hash_store import BlockHashStore
-from diskdelta.index_hash_mapper import IndexHashMapper
+from diskdelta.index_hash_mapper import Hasher, IndexHashMapper
 from bitarray import bitarray
 
 
@@ -201,6 +200,7 @@ class MessageBuilder:
         message.ref_index_bits = ref_index_bits
 
         # Read bitarray to get message data
+        hasher = Hasher(self.store.digest_size)
         i = ind_size * 2
         while i < len(bitarr_message):
 
@@ -214,7 +214,7 @@ class MessageBuilder:
                 # Literal
                 data = bitarr_message[i : i + self.store.block_size * 8].tobytes()
                 i += self.store.block_size * 8
-                hash = sha256(data).digest()
+                hash = hasher.hash(data)
             elif data_type == DataType.Hash.value:
                 # Hash
                 data = bitarr_message[i : i + self.store.digest_size * 8].tobytes()

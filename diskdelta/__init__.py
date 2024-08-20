@@ -1,4 +1,3 @@
-from hashlib import sha256
 from bitarray import bitarray
 
 from diskdelta.block_hash_store import BlockHashStore
@@ -16,7 +15,7 @@ class DiskDelta:
     def __init__(self, initial_image_path, target_image_path, block_size, digest_size):
         self.block_size = block_size
         self.digest_size = digest_size
-        self.known_blocks = BlockHashStore(self.block_size, sha256().digest_size)
+        self.known_blocks = BlockHashStore(self.block_size, self.digest_size)
         self.initial_hashes = IndexHashMapper(
             initial_image_path, self.block_size, self.digest_size
         )

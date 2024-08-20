@@ -2,6 +2,20 @@ from hashlib import sha256
 from typing import Any, List
 
 
+class Hasher:
+    """
+    This class is used to hash blocks of data.
+    """
+
+    def __init__(self, hash_size: int):
+        self.hash_size = hash_size
+
+    def hash(self, data: Any) -> Any:
+        """
+        Return the hash of the given data.
+        """
+        return sha256(data).digest()[0 : self.hash_size]
+
 class IndexHashMapper:
     """
     This class is used to map block indexes and their corresponding hashes.
@@ -42,6 +56,7 @@ class IndexHashMapper:
         """
         Load the hashes and indexes from the image file.
         """
+        hasher: Hasher = Hasher(self.hash_size)
         with open(self.image_path, "rb") as f:
             index = 0
             while True:
@@ -49,7 +64,7 @@ class IndexHashMapper:
                 if not block:
                     break
 
-                hash = sha256(block).digest()
+                hash = hasher.hash(block)
                 self.hash_by_index.append(hash)
 
                 if hash not in self.indexes_by_hash:
