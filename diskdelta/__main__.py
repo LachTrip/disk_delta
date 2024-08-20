@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import hashlib
 import math
 import tempfile
 import os
@@ -59,6 +60,20 @@ def main():
     reg_message = decoder.get_message_from_bitarray(bit_message)
 
     disk_delta.apply_message(reg_message, args.initial_image_path, args.output_path + "_reconstructed_image.img")
+
+    # Create hashes for target and reconstructed image and compare
+    with open(args.target_image_path, "rb") as f:
+        digest_target = hashlib.file_digest(f, "sha256")
+
+    with open(args.output_path + "_reconstructed_image.img", "rb") as f:
+        digest_reconstructed = hashlib.file_digest(f, "sha256")
+    
+    if digest_target.digest() == digest_reconstructed.digest():
+        print("Reconstructed image matches target image")
+    else:
+        print("Reconstructed image does not match target image")
+        print(f"Target image hash       : {digest_target.hexdigest()}")
+        print(f"Reconstructed image hash: {digest_reconstructed.hexdigest()}")
 
 if __name__ == "__main__":
     main()
