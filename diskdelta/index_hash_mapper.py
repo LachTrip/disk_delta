@@ -1,4 +1,5 @@
 from hashlib import sha256
+import os
 from typing import Any, List
 
 
@@ -60,6 +61,18 @@ class IndexHashMapper:
         with open(self.image_path, "rb") as f:
             index = 0
             while True:
+                image_bytes_num = os.path.getsize(self.image_path)
+                image_size = image_bytes_num // self.block_size
+                five_percent = image_size // 20
+                if five_percent != 0:
+                    if index % five_percent == 0:
+                        if index/five_percent*5 != 100:
+                            print(f"{int(index/five_percent)*5}%... ", end="")
+                        else:
+                            print("100%")
+
+                # if index % 1000 == 0:
+                #     print(f"Index {index}... ", end="")
                 block = f.read(self.block_size)
                 if not block:
                     break

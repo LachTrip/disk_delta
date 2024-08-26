@@ -9,6 +9,8 @@ from diskdelta import DiskDelta
 
 
 def main():
+    print(f"Running diskdelta: {datetime.datetime.now()}")
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -36,7 +38,7 @@ def main():
 
     args = parser.parse_args()
 
-    block_size = 1
+    block_size = 4096 # In bytes
     tb = 1024**4
     # Assuming drive TBW is 100,000 (very high)
     digest_size = math.ceil(2 * math.log2(100000 * tb / block_size))
@@ -47,17 +49,23 @@ def main():
     )
 
     # write to file as bits
-    bit_message = disk_delta.generate_bitarray()
-    with open(args.output_path + "_bits", "wb") as f:
-        bit_message.tofile(f)
+    # disk_delta.write_bits_to_file(args.output_path + "_bits")
+    
+    # bit_message = disk_delta.generate_bitarray()
+    # with open(args.output_path + "_bits", "wb") as f:
+    #     bit_message.tofile(f)
 
-    # write to file as string
-    str_message = disk_delta.generate_string()
-    with open(args.output_path + "_str", "wb") as f:
-        f.write(str_message.encode("utf-8"))
+    # write to file as string (only works for text files)
+    # str_message = disk_delta.generate_string()
+    # with open(args.output_path + "_str", "wb") as f:
+    #     f.write(str_message.encode("utf-8"))
+
+    message_size = disk_delta.message.calculate_size_bits(disk_delta.known_blocks)
+    message_Gb = message_size / 8 / 1024 / 1024 / 1024
+    print("Message size: ", message_Gb, "Gb")
 
     decoder = disk_delta.get_decoder()
-    reg_message = decoder.get_message_from_bitarray(bit_message)
+    reg_message = decoder.get_message_from_bits(args.output_path + "_bits")
 
     disk_delta.apply_message(reg_message, args.initial_image_path, args.output_path + "_reconstructed_image.img")
 

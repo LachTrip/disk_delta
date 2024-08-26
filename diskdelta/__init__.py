@@ -16,9 +16,13 @@ class DiskDelta:
         self.block_size = block_size
         self.digest_size = digest_size
         self.known_blocks = BlockHashStore(self.block_size, self.digest_size)
+
+        print("Generating hashes for initial image")
         self.initial_hashes = IndexHashMapper(
             initial_image_path, self.block_size, self.digest_size
         )
+
+        print("Generating hashes for target image")
         self.target_hashes = IndexHashMapper(
             target_image_path, self.block_size, self.digest_size
         )
@@ -28,23 +32,22 @@ class DiskDelta:
 
         message_builder = MessageBuilder(self.known_blocks, self.initial_hashes.size())
 
-        self.message = message_builder.build_message(
+        print("Building message")
+        self.message: Message = message_builder.build_message(
             self.initial_hashes, self.target_hashes
         )
 
-    def generate_bitarray(self) -> bitarray:
+    def write_bits_to_file(self, output_path: str) -> None:
         """
-        Generates bitarray representation of the disk delta.
+        Writes bit representation of the disk delta.
         """
 
-        delta_as_bitarray = self.message.to_bitarray()
+        self.message.write_bits_to_file(output_path)
 
         # Add padding to make the bitarray length a multiple of 8
         # padding_length = 8 - len(delta_as_bitarray) % 8
         # if padding_length != 8:
         #     delta_as_bitarray += bitarray(padding_length)
-
-        return delta_as_bitarray
 
     def generate_string(self) -> str:
         """
@@ -57,8 +60,10 @@ class DiskDelta:
 
     def get_decoder(self):
         return DeltaDecoder(self)
-    
-    def apply_message(self, message: Message, initial_image_path: str, output_path: str):
+
+    def apply_message(
+        self, message: Message, initial_image_path: str, output_path: str
+    ):
         """
         Apply the message to the initial image to reconstruct the target image.
         """
@@ -69,21 +74,22 @@ class DiskDelta:
 
                 # Apply the message to the output file
                 for instruction in message.blocks:
-                    if instruction.data_type == DataType.Literal:
-                        out.seek(instruction.index * self.block_size)
-                        out.write(instruction.data)
-                    elif instruction.data_type == DataType.Hash:
-                        data = self.known_blocks.get_data_by_hash(instruction.data)
-                        out.seek(instruction.index * self.block_size)
-                        out.write(data)
-                    elif instruction.data_type == DataType.DiskIndex:
-                        data = self.initial_hashes.data_by_index(instruction.data)
-                        out.seek(instruction.index * self.block_size)
-                        out.write(data)
-                    elif instruction.data_type == DataType.Reference:
-                        for block in message.blocks:
-                            if block.index == instruction.data:
-                                data = block.data
-                                break
-                        out.seek(instruction.index * self.block_size)
-                        out.write(data)
+                    data = None
+
+                    match instruction.data_type:
+                        case DataType.Literal:
+                            data = instruction.data
+                        case DataType.Hash:
+                            data = self.known_blocks.get_data_by_hash(instruction.data)
+                        case DataType.DiskIndex:
+                            data = self.initial_hashes.data_by_index(
+                                int(instruction.data)
+                            )
+                        case DataType.Reference:
+                            data = message.blocks[int(instruction.data)].data
+                    
+                    if data is None:
+                        raise ValueError("Data not found")
+                        
+                    out.seek(instruction.disk_index * self.block_size)
+                    out.write(data)

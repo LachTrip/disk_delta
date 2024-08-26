@@ -7,9 +7,9 @@ class BlockHashStore:
     """
 
     def __init__(self, block_size, digest_size):
-        self.block_size = block_size
-        self.digest_size = digest_size
-        self.hashes = []
+        self.block_size: int = block_size
+        self.digest_size: int = digest_size
+        self.hashes: list[bytes]= []
         self.load()
 
     def load(self):

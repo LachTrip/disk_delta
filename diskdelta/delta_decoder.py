@@ -22,7 +22,7 @@ class DeltaDecoder:
         message = self.delta.message
         pass
 
-    def get_message_from_bitarray(self, message: bitarray) -> Message:
+    def get_message_from_bits(self, file_path: str) -> Message:
         """
         Returns target image through applying message instructions to initial
         image.
@@ -35,7 +35,7 @@ class DeltaDecoder:
 
         message_builder = diskdelta.MessageBuilder(known_blocks, initial_image.size())
 
-        decoded_message: Message = message_builder.get_message_from_bitarray(message, initial_image)
+        decoded_message: Message = message_builder.get_message_from_bits(file_path, initial_image)
         # bit_message = decoded_message.to_bitarray()
 
         return decoded_message
