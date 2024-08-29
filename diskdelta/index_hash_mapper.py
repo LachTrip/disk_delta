@@ -1,6 +1,8 @@
 from hashlib import sha256
+import math
 import os
-from typing import Any, List
+
+from diskdelta.debug import Debug
 
 
 class Hasher:
@@ -11,34 +13,64 @@ class Hasher:
     def __init__(self, hash_size: int):
         self.hash_size = hash_size
 
-    def hash(self, data: Any) -> Any:
+    def hash(self, data: bytes) -> bytes:
         """
         Return the hash of the given data.
         """
         return sha256(data).digest()[0 : self.hash_size]
 
+
 class IndexHashMapper:
     """
-    This class is used to map block indexes and their corresponding hashes.
-    Hashes can be accesse by the block index and hashes can be used to retrieve 
-    a list of block indexes.
+    This class is used to map indexes of blocks in an image and their
+    corresponding hashes. Use block index to access corresponding hash and
+    hashes to retrieve a list of block indexes with that hash.
     """
 
-    def __init__(self, image_path, block_size, hash_size):
-        self.block_size = block_size
-        self.hash_size = hash_size
+    def __init__(
+        self, image_path: str, block_size_by_bytes: int, hash_size_by_bytes: int
+    ):
+        self.block_literal_size = block_size_by_bytes
+        self.block_hash_size = hash_size_by_bytes
         self.image_path = image_path
 
-        self.hash_by_index = []
-        self.indexes_by_hash = {}
+        self.hash_by_index: list[bytes] = []
+        self.indexes_by_hash: dict[bytes, list[bytes]] = {}
 
         if image_path:
             self.load()
 
-    def size(self):
-        return len(self.hash_by_index)
+    def load(self):
+        """
+        Load the hashes and indexes from the image file.
+        """
+        hasher: Hasher = Hasher(self.block_hash_size)
+        with open(self.image_path, "rb") as f:
+            index = 0
+            while True:
+                if not self.load_entry(f, index, hasher):
+                    break
+                index += 1
 
-    def get_indexes_by_hash(self, hash: Any) -> list:
+    def load_entry(self, f, index, hasher):
+        if Debug.isEnabled:
+            self.log_generating_hashes_progress(index)
+
+        block = f.read(self.block_literal_size)
+        if not block:
+            return False
+
+        hash = hasher.hash(block)
+        self.hash_by_index.append(hash)
+
+        if hash not in self.indexes_by_hash:
+            self.indexes_by_hash[hash] = []
+
+        self.indexes_by_hash[hash].append(index)
+
+        return True
+
+    def get_indexes_by_hash(self, hash: bytes) -> list:
         """
         Return the list of indexes that have the given hash.
         """
@@ -47,49 +79,42 @@ class IndexHashMapper:
         else:
             return []
 
-    def get_hash_by_index(self, index: int) -> Any:
+    def get_hash_by_index(self, index: int) -> bytes:
         """
         Return the hash of the block with the given index.
         """
         return self.hash_by_index[index]
 
-    def load(self):
-        """
-        Load the hashes and indexes from the image file.
-        """
-        hasher: Hasher = Hasher(self.hash_size)
-        with open(self.image_path, "rb") as f:
-            index = 0
-            while True:
-                image_bytes_num = os.path.getsize(self.image_path)
-                image_size = image_bytes_num // self.block_size
-                five_percent = image_size // 20
-                if five_percent != 0:
-                    if index % five_percent == 0:
-                        if index/five_percent*5 != 100:
-                            print(f"{int(index/five_percent)*5}%... ", end="")
-                        else:
-                            print("100%")
-
-                # if index % 1000 == 0:
-                #     print(f"Index {index}... ", end="")
-                block = f.read(self.block_size)
-                if not block:
-                    break
-
-                hash = hasher.hash(block)
-                self.hash_by_index.append(hash)
-
-                if hash not in self.indexes_by_hash:
-                    self.indexes_by_hash[hash] = []
-
-                self.indexes_by_hash[hash].append(index)
-                index += 1
-    
-    def data_by_index(self, index: int) -> Any:
+    def literal_by_index(self, index: int) -> bytes:
         """
         Return the data of the block with the given index.
         """
         with open(self.image_path, "rb") as f:
-            f.seek(index * self.block_size)
-            return f.read(self.block_size)
+            f.seek(index * self.block_literal_size)
+            return f.read(self.block_literal_size)
+
+    def size(self):
+        return len(self.hash_by_index)
+
+    def log_generating_hashes_progress(self, index: int):
+        image_bytes_num = os.path.getsize(self.image_path)
+        image_size = image_bytes_num // self.block_literal_size
+        five_percent = image_size // 20
+
+        if five_percent == 0:
+            return
+        if index % five_percent != 0:
+            return
+        if index == 0:
+            Debug.log("    0%... ", end="")
+            return
+        
+        progress = int(index/five_percent)*5
+        if progress > 100:
+            return
+        
+        if progress != 100:
+            Debug.log(f"{progress}%... ", end="")
+        else:
+            Debug.log("100%", end="")
+            Debug.log("")

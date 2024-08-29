@@ -2,15 +2,13 @@ import argparse
 import datetime
 import hashlib
 import math
-import tempfile
-import os
+from string import digits
 
 from diskdelta import DiskDelta
+from diskdelta.debug import Debug
 
 
-def main():
-    print(f"Running diskdelta: {datetime.datetime.now()}")
-
+def get_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -27,6 +25,13 @@ def main():
         default="input/target_image.img",
     )
 
+    parser.add_argument(
+        "-b",
+        "--block_size",
+        help="Block size in bytes",
+        default=1,
+    )
+
     now_formatted = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     default_output_path = f"output/diskdelta_{now_formatted}"
     parser.add_argument(
@@ -36,52 +41,155 @@ def main():
         default=default_output_path,
     )
 
-    args = parser.parse_args()
+    parser.add_argument(
+        "-d",
+        "--enable_debug",
+        help="Enable debug output",
+        action="store_true",
+    )
 
-    block_size = 4096 # In bytes
+    return parser.parse_args()
+
+
+def get_message_size(disk_delta):
+    message_size = disk_delta.message.calculate_size_bits()
+
+    if message_size < 8:
+        return str(message_size) + " bits"
+    elif message_size < 8 * 1024:
+        message_bytes = message_size / 8
+        return str(message_bytes) + " bytes"
+    elif message_size < 8 * 1024 * 1024:
+        message_Kb = message_size / 8 / 1024
+        return str(message_Kb) + " Kb"
+    elif message_size < 8 * 1024 * 1024 * 1024:
+        message_Mb = message_size / 8 / 1024 / 1024
+        return str(message_Mb) + " Mb"
+    else:
+        message_Gb = message_size / 8 / 1024 / 1024 / 1024
+        return str(message_Gb) + " Gb"
+
+
+def simulate_send_disk_delta(
+    initial_image_path: str,
+    target_image_path: str,
+    block_size: int,
+    digest_size_bytes: int,
+    output_path: str,
+):
+    """
+    Simulate sending disk delta
+    """
+    # Generate the disk delta
+    disk_delta = DiskDelta(
+        initial_image_path, target_image_path, block_size, digest_size_bytes
+    )
+
+    # write to file as bits
+    disk_delta.write_message_to_file(output_path + "_bits")
+
+    Debug.log(f"Message size: {get_message_size(disk_delta)}")
+
+    return disk_delta
+
+
+def simulate_receive_disk_delta(
+    disk_delta: DiskDelta,
+    output_path: str,
+    initial_image_path: str,
+    target_image_path,
+    block_size,
+    digest_size,
+):
+    Debug.log("Generating message from bits message")
+    Debug.increment_indent()
+    decoder = disk_delta.get_decoder()
+    regenerated_message = decoder.get_message_from_bits(output_path + "_bits")
+    Debug.increment_indent(-1)
+
+    # Compare the regenerated message with the original message
+    original_message = disk_delta.message
+    assert regenerated_message == original_message
+
+    Debug.log("Reconstructing target image")
+
+    disk_delta.apply_message(
+        regenerated_message,
+        initial_image_path,
+        output_path + "_reconstructed_image.img",
+    )
+
+    Debug.log("Verifying reconstructed image")
+    target_hash = hashlib.sha256(open(target_image_path, "rb").read()).hexdigest()
+    recon_hash = hashlib.sha256(
+        open(output_path + "_reconstructed_image.img", "rb").read()
+    ).hexdigest()
+    if target_hash == recon_hash:
+        Debug.log("Reconstructed image verified")
+    else:
+        Debug.log("Reconstructed image verification failed")
+        Debug.log(f"Original hash: {target_hash}")
+        Debug.log(f"Reconstructed hash: {recon_hash}")
+
+
+def main():
+    args = get_args()
+    block_size = int(args.block_size)  # In bytes
+    initial_image_path = args.initial_image_path
+    target_image_path = args.target_image_path
+    output_path = args.output_path
+
     tb = 1024**4
     # Assuming drive TBW is 100,000 (very high)
     digest_size = math.ceil(2 * math.log2(100000 * tb / block_size))
 
-    # Generate the disk delta
-    disk_delta = DiskDelta(
-        args.initial_image_path, args.target_image_path, block_size, digest_size
+    Debug.enable(args.enable_debug)
+
+    time_start = datetime.datetime.now()
+    Debug.log(f"Running diskdelta: {time_start}")
+    Debug.log("")
+
+    Debug.log("Simulating message creation:")
+    Debug.increment_indent()
+
+    disk_delta: DiskDelta = simulate_send_disk_delta(
+        initial_image_path,
+        target_image_path,
+        block_size,
+        digest_size,
+        output_path,
     )
 
-    # write to file as bits
-    # disk_delta.write_bits_to_file(args.output_path + "_bits")
-    
-    # bit_message = disk_delta.generate_bitarray()
-    # with open(args.output_path + "_bits", "wb") as f:
-    #     bit_message.tofile(f)
+    Debug.increment_indent(-1)
+    Debug.log("")
+    Debug.log("Simulating message application:")
+    Debug.increment_indent()
 
-    # write to file as string (only works for text files)
-    # str_message = disk_delta.generate_string()
-    # with open(args.output_path + "_str", "wb") as f:
-    #     f.write(str_message.encode("utf-8"))
+    simulate_receive_disk_delta(
+        disk_delta,
+        output_path,
+        initial_image_path,
+        target_image_path,
+        block_size,
+        digest_size,
+    )
 
-    message_size = disk_delta.message.calculate_size_bits(disk_delta.known_blocks)
-    message_Gb = message_size / 8 / 1024 / 1024 / 1024
-    print("Message size: ", message_Gb, "Gb")
+    Debug.increment_indent(-1)
+    Debug.log("")
+    time_end = datetime.datetime.now()
+    Debug.log(f"Completed: {time_end}")
+    time_complete_arr = str(time_end - time_start).split(":")
+    time_complete = (
+        time_complete_arr[0]
+        + " hours, "
+        + time_complete_arr[1]
+        + " minutes, "
+        + time_complete_arr[2]
+        + " seconds"
+    )
+    Debug.log(f"Time to complete: {time_complete}")
+    Debug.log("")
 
-    decoder = disk_delta.get_decoder()
-    reg_message = decoder.get_message_from_bits(args.output_path + "_bits")
-
-    disk_delta.apply_message(reg_message, args.initial_image_path, args.output_path + "_reconstructed_image.img")
-
-    # Create hashes for target and reconstructed image and compare
-    with open(args.target_image_path, "rb") as f:
-        digest_target = hashlib.file_digest(f, "sha256")
-
-    with open(args.output_path + "_reconstructed_image.img", "rb") as f:
-        digest_reconstructed = hashlib.file_digest(f, "sha256")
-    
-    if digest_target.digest() == digest_reconstructed.digest():
-        print("Reconstructed image matches target image")
-    else:
-        print("Reconstructed image does not match target image")
-        print(f"Target image hash       : {digest_target.hexdigest()}")
-        print(f"Reconstructed image hash: {digest_reconstructed.hexdigest()}")
 
 if __name__ == "__main__":
     main()

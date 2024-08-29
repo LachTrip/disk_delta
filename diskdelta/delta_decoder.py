@@ -27,9 +27,6 @@ class DeltaDecoder:
         Returns target image through applying message instructions to initial
         image.
         """
-        # These are known to both systems
-        block_size: int = self.delta.block_size
-        digest_size: int = self.delta.digest_size
         initial_image: IndexHashMapper = self.delta.initial_hashes
         known_blocks: BlockHashStore = self.delta.known_blocks
 

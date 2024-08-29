@@ -1,6 +1,9 @@
 from bitarray import bitarray
 
+from diskdelta.debug import Debug
 from diskdelta.block_hash_store import BlockHashStore
+
+# from diskdelta.delta_decoder import DeltaDecoder
 from diskdelta.delta_decoder import DeltaDecoder
 from diskdelta.index_hash_mapper import IndexHashMapper
 from diskdelta.message import Message, MessageBuilder, DataType
@@ -12,51 +15,47 @@ class DiskDelta:
     image.
     """
 
-    def __init__(self, initial_image_path, target_image_path, block_size, digest_size):
-        self.block_size = block_size
-        self.digest_size = digest_size
-        self.known_blocks = BlockHashStore(self.block_size, self.digest_size)
+    def __init__(
+        self, initial_image_path, target_image_path, block_size, digest_size_bytes
+    ):
+        self.image_block_size = block_size
+        self.digest_size = digest_size_bytes
+        self.known_blocks = BlockHashStore(self.image_block_size, self.digest_size)
 
-        print("Generating hashes for initial image")
+        Debug.log("Generating hashes for initial image")
+        Debug.increment_indent()
         self.initial_hashes = IndexHashMapper(
-            initial_image_path, self.block_size, self.digest_size
+            initial_image_path, self.image_block_size, self.digest_size
         )
+        Debug.increment_indent(-1)
 
-        print("Generating hashes for target image")
+        Debug.log("Generating hashes for target image")
+        Debug.increment_indent()
         self.target_hashes = IndexHashMapper(
-            target_image_path, self.block_size, self.digest_size
+            target_image_path, self.image_block_size, self.digest_size
         )
+        Debug.increment_indent(-1)
 
         if self.initial_hashes.size() != self.target_hashes.size():
             raise ValueError("Initial and target images are not the same size")
 
         message_builder = MessageBuilder(self.known_blocks, self.initial_hashes.size())
 
-        print("Building message")
+        Debug.log("Building message")
+        Debug.increment_indent()
         self.message: Message = message_builder.build_message(
             self.initial_hashes, self.target_hashes
         )
+        Debug.increment_indent(-1)
 
-    def write_bits_to_file(self, output_path: str) -> None:
+    def write_message_to_file(self, file_path):
         """
-        Writes bit representation of the disk delta.
+        Writes bit representation of the message.
         """
-
-        self.message.write_bits_to_file(output_path)
-
-        # Add padding to make the bitarray length a multiple of 8
-        # padding_length = 8 - len(delta_as_bitarray) % 8
-        # if padding_length != 8:
-        #     delta_as_bitarray += bitarray(padding_length)
-
-    def generate_string(self) -> str:
-        """
-        Generates string representation of the disk delta.
-        """
-
-        delta_as_string = self.message.to_string()
-
-        return delta_as_string
+        Debug.log("Writing message to file")
+        Debug.increment_indent()
+        self.message.write_bits_to_file(file_path)
+        Debug.increment_indent(-1)
 
     def get_decoder(self):
         return DeltaDecoder(self)
@@ -67,29 +66,37 @@ class DiskDelta:
         """
         Apply the message to the initial image to reconstruct the target image.
         """
+        # Copy the initial image to the output file
         with open(initial_image_path, "rb") as f:
             with open(output_path, "wb") as out:
-                # Copy the initial image to the output file
                 out.write(f.read())
 
-                # Apply the message to the output file
-                for instruction in message.blocks:
-                    data = None
+        # Ensure the output file is the initial image
+        with open(initial_image_path, "rb") as f:
+            with open(output_path, "rb") as out:
+                assert f.read() == out.read()
 
-                    match instruction.data_type:
-                        case DataType.Literal:
-                            data = instruction.data
-                        case DataType.Hash:
-                            data = self.known_blocks.get_data_by_hash(instruction.data)
-                        case DataType.DiskIndex:
-                            data = self.initial_hashes.data_by_index(
-                                int(instruction.data)
-                            )
-                        case DataType.Reference:
-                            data = message.blocks[int(instruction.data)].data
-                    
-                    if data is None:
-                        raise ValueError("Data not found")
-                        
-                    out.seek(instruction.disk_index * self.block_size)
-                    out.write(data)
+        # Apply the message to the output file
+        with open(output_path, "r+b") as out:
+            for instruction in message.instructions:
+                literal = self.get_literal_from_instruction(instruction, message)
+                if literal is None:
+                    raise ValueError("Data literal not found")
+                out.seek(instruction.disk_index * self.image_block_size)
+                out.write(literal)
+
+    def get_literal_from_instruction(self, instruction, message):
+        data = None
+        match instruction.data_type:
+            case DataType.Literal:
+                data = instruction.data
+            case DataType.Hash:
+                data = self.known_blocks.get_data_by_hash(instruction.data)
+            case DataType.DiskReference:
+                disk_index = int.from_bytes(instruction.data)
+                data = self.initial_hashes.literal_by_index(disk_index)
+            case DataType.MessageReference:
+                msg_index = int.from_bytes(instruction.data)
+                ref_instruction = message.instructions[msg_index]
+                data = self.get_literal_from_instruction(ref_instruction, message)
+        return data

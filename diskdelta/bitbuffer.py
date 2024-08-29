@@ -12,9 +12,9 @@ class BitReader:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        self.file.close()
 
-    def read(self, num_bits) -> bitarray:
+    def read(self, num_bits) -> bitarray | None:
         """
         Read the given number of bits from the file.
         """
@@ -26,56 +26,63 @@ class BitReader:
             bits.append(bit)
         return bits
 
-    def read_bit(self) -> bool:
+    def read_bit(self) -> bool | None:
         if self.buffer_index == 0:
             byte = self.file.read(1)
-            if byte == b'':
+            if byte == b"":
                 return None
             self.buffer = ord(byte)
             self.buffer_index = 8
         bit = (self.buffer >> 7) & 1
         self.buffer <<= 1
         self.buffer_index -= 1
-        return bit
-
-    def close(self):
-        self.file.close()
+        return bool(bit)
 
 
 class BitWriter:
     def __init__(self, file_path):
         self.file = builtins.open(file_path, "wb")
-        self.buffer = 0
-        self.buffer_index = 0
+        self.bit_index = 0
+        self.current_byte = 0
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+        if self.bit_index > 0:
+            self.file.write(bytes([self.current_byte]))
+        self.file.close()
 
     def write(self, bits: bitarray):
         """
         Write the given bits to the file.
         """
-        for bit in bits:
-            self.write_bit(bit)
 
-    def write_bit(self, bit: bool):
-        self.buffer |= bit << (7 - self.buffer_index)
-        self.buffer_index += 1
-        if self.buffer_index == 8:
-            self.file.write(bytes([self.buffer]))
-            self.buffer = 0
-            self.buffer_index = 0
+        # write bits to remaining bits the current byte
+        if self.bit_index > 0:
+            new_bits = bits[: 8 - self.bit_index]
+            self.current_byte |= new_bits.tobytes()[0] >> self.bit_index
+            self.bit_index += len(new_bits)
+            if self.bit_index == 8:
+                self.file.write(bytes([self.current_byte]))
+                self.current_byte = 0
+                self.bit_index = 0
+            bits = bits[len(new_bits) :]
 
-    def close(self):
-        if self.buffer_index > 0:
-            self.file.write(bytes([self.buffer]))
-        self.file.close()
+        # write full bytes
+        bytes_to_write = len(bits) // 8
+        self.file.write(bits[: bytes_to_write * 8].tobytes())
+        bits = bits[bytes_to_write * 8 :]
+
+        # write remaining bits to the last byte
+        if len(bits) > 0:
+            self.current_byte = bits.tobytes()[0]
+            self.bit_index = len(bits)
+        
+        bit_index = 0
 
 
-def open(file_path, mode):
+def open(file_path, mode) -> BitReader | BitWriter:
     if mode == "r":
         return BitReader(file_path)
     elif mode == "w":
