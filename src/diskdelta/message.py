@@ -111,8 +111,8 @@ class Message:
             f.write(bitarray(f"{self.msg_ref_bits_size:0{self.header_bits_size}b}"))
 
             Debug.log("Writing instructions")
-            for inst in self.instructions:
-                self.log_write_message_progress(inst.disk_index)
+            for index, inst in enumerate(self.instructions):
+                self.log_write_message_progress(index, len(self.instructions))
                 f.write(
                     inst.to_bitarray(
                         self.changed_block_index_size,
@@ -122,7 +122,7 @@ class Message:
                 )
             Debug.log("Done.")
 
-    def log_write_message_progress(self, index):
+    def log_write_message_progress(self, index, max_index):
         five_percent = len(self.instructions) // 20
 
         if five_percent == 0:

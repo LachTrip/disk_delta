@@ -166,3 +166,5 @@ input/
 output/
 data/
 .Trash-1000/
+src/boiler.py
+.vscode/settings.json
