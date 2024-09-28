@@ -1,4 +1,5 @@
 import builtins
+import os
 from typing import cast
 from bitarray import bitarray
 
@@ -97,6 +98,9 @@ class BitReader:
 
 class BitWriter:
     def __init__(self, file_path):
+        directory = os.path.dirname(file_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         self.file = builtins.open(file_path, "wb")
         self.bit_index = 0
         self.current_byte = 0
