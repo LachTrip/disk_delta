@@ -1,5 +1,6 @@
 import datetime
 from enum import Enum
+from hashlib import sha256
 import itertools
 import math
 import os
@@ -14,21 +15,28 @@ class Technique(Enum):
     RSYNC = "rsync"
 
 
-class Result:
-    headers = [
-        # test parameters
-        "image_size",
-        "initial_image_hash",
-        "target_image_hash",
-        "block_size",
-        "compression_technique",
-        # result data
-        "compressed_message_size",
-        "compression_ratio",
-        "compression_time",
-    ]
+TEST_HEADERS = [
+    "image_size",
+    "initial_image_name",
+    "initial_image_hash",
+    "target_image_name",
+    "target_image_hash",
+    "compression_technique",
+    "block_size",
+]
 
-    def __init__(self, compressed_size_bits: int, compression_ratio: float, time_seconds: float):
+RESULT_HEADERS = [
+    "compressed_message_size",
+    "compression_ratio",
+    "compression_time",
+]
+
+
+class Result:
+
+    def __init__(
+        self, compressed_size_bits: int, compression_ratio: float, time_seconds: float
+    ):
         self.size_bits = compressed_size_bits
         self.ratio = compression_ratio
         self.time = time_seconds
@@ -41,7 +49,14 @@ class Result:
 
 
 class Test:
-    def __init__(self, initial_image_path: str, target_image_path: str, output_folder_path: str, technique: Technique, block_size: int):
+    def __init__(
+        self,
+        initial_image_path: str,
+        target_image_path: str,
+        output_folder_path: str,
+        technique: Technique,
+        block_size: int,
+    ):
         self.initial_image_path = initial_image_path
         self.target_image_path = target_image_path
         self.output_folder_path = output_folder_path
@@ -54,12 +69,14 @@ class Test:
                 case Technique.LACH:
                     output_path = os.path.join(
                         self.output_folder_path,
-                        f"LACH_{os.path.basename(self.initial_image_path)}_{os.path.basename(self.target_image_path)}_{self.block_size}"
+                        f"LACH_{os.path.basename(self.initial_image_path)}_{os.path.basename(self.target_image_path)}_{self.block_size}",
                     )
 
                     tb = 1024**4
                     # Assuming drive TBW is 100,000 (very high)
-                    self.digest_size = math.ceil(2 * math.log2(100000 * tb / self.block_size))
+                    self.digest_size = math.ceil(
+                        2 * math.log2(100000 * tb / self.block_size)
+                    )
 
                     time_start = time.perf_counter()
 
@@ -74,48 +91,71 @@ class Test:
                     time_end = time.perf_counter()
 
                     compressed_size = os.path.getsize(output_path)
-                    compression_ratio = os.path.getsize(self.target_image_path) / compressed_size
+                    compression_ratio = (
+                        os.path.getsize(self.target_image_path) / compressed_size
+                    )
                     compression_time = time_end - time_start
 
                     return Result(compressed_size, compression_ratio, compression_time)
                 case Technique.XZ:
                     output_path = os.path.join(
                         self.output_folder_path,
-                        f"XZ_{os.path.basename(self.target_image_path)}_{self.block_size}"
+                        f"XZ_{os.path.basename(self.target_image_path)}_{self.block_size}",
                     )
 
                     time_start = time.perf_counter()
 
                     subprocess.run(
-                        ["xz", "-k", "-z", "-9", "-e", "-c", "-T0", f"-B{self.block_size}", self.target_image_path],
-                        stdout=open(output_path, 'wb'),
-                        check=True
+                        [
+                            "xz",
+                            "-k",
+                            "-z",
+                            "-9",
+                            "-e",
+                            "-c",
+                            "-T0",
+                            f"-B{self.block_size}",
+                            self.target_image_path,
+                        ],
+                        stdout=open(output_path, "wb"),
+                        check=True,
                     )
 
                     time_end = time.perf_counter()
 
                     compressed_size = os.path.getsize(output_path)
-                    compression_ratio = os.path.getsize(self.target_image_path) / compressed_size
+                    compression_ratio = (
+                        os.path.getsize(self.target_image_path) / compressed_size
+                    )
                     compression_time = time_end - time_start
 
                     return Result(compressed_size, compression_ratio, compression_time)
                 case Technique.RSYNC:
                     output_path = os.path.join(
                         self.output_folder_path,
-                        f"RSYNC_{os.path.basename(self.initial_image_path)}_{os.path.basename(self.target_image_path)}_{self.block_size}"
+                        f"RSYNC_{os.path.basename(self.initial_image_path)}_{os.path.basename(self.target_image_path)}_{self.block_size}",
                     )
 
                     time_start = time.perf_counter()
 
                     subprocess.run(
-                        ["rsync", "--no-whole-file", f"--block-size={self.block_size}", self.initial_image_path, self.target_image_path, output_path],
-                        check=True
+                        [
+                            "rsync",
+                            "--no-whole-file",
+                            f"--block-size={self.block_size}",
+                            self.initial_image_path,
+                            self.target_image_path,
+                            output_path,
+                        ],
+                        check=True,
                     )
 
                     time_end = time.perf_counter()
 
                     compressed_size = os.path.getsize(output_path)
-                    compression_ratio = os.path.getsize(self.target_image_path) / compressed_size
+                    compression_ratio = (
+                        os.path.getsize(self.target_image_path) / compressed_size
+                    )
                     compression_time = time_end - time_start
 
                     return Result(compressed_size, compression_ratio, compression_time)
@@ -128,9 +168,12 @@ class Test:
     def __str__(self):
         return (
             f"{os.path.getsize(self.initial_image_path)}, "
-            f"{os.path.getsize(self.target_image_path)}, "
-            f"{self.block_size}, "
-            f"{self.technique}"
+            f"{os.path.basename(self.initial_image_path)}, "
+            f"{sha256(open(self.initial_image_path, 'rb').read()).hexdigest()}, "
+            f"{os.path.basename(self.target_image_path)}, "
+            f"{sha256(open(self.target_image_path, 'rb').read()).hexdigest()}, "
+            f"{self.technique.value}, "
+            f"{self.block_size}"
         )
 
     def __repr__(self):
@@ -142,10 +185,7 @@ class ResultsWriter:
         # Check file is csv that follows the format
         self.file_path = file_path
         self.file = open(file_path, "a+")
-        if self.file.tell() == 0:
-            self.init_headers()
-        else:
-            self.check_headers()
+        self.initialize_or_validate_file()
 
     def __enter__(self):
         return self
@@ -153,14 +193,22 @@ class ResultsWriter:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.file.close()
 
-    def init_headers(self):
-        self.file.write(",".join(Result.headers) + "\n")
+    def initialize_or_validate_file(self):
+        if self.file.tell() == 0:
+            self.init_headers()
+        else:
+            self.validate_headers()
 
-    def check_headers(self):
+    def init_headers(self):
+        self.file.write(",".join(TEST_HEADERS + RESULT_HEADERS) + "\n")
+
+    def validate_headers(self):
         self.file.seek(0)
-        self.headers = self.file.readline().strip().split(",")
-        if self.headers != Result.headers:
-            raise ValueError("Invalid headers. Please provide a valid or empty csv file")
+        headers = self.file.readline().strip().split(",")
+        if headers != TEST_HEADERS + RESULT_HEADERS:
+            raise ValueError(
+                "Invalid headers. Please provide a valid or empty csv file"
+            )
         self.file.seek(0, 2)
 
     def write(self, test: Test, result: Result):
@@ -187,17 +235,20 @@ def main():
 
     block_sizes = [1, image_size, math.sqrt(image_size)]
     techniques = [Technique.LACH, Technique.XZ, Technique.RSYNC]
-    
+
     print("Running tests...")
-    for input_paths, technique, block_size in itertools.product(input_path_couples, techniques, block_sizes):
-        test = Test(input_paths[0], input_paths[1], "output/images/", technique, block_size)
+    for input_paths, technique, block_size in itertools.product(
+        input_path_couples, techniques, block_sizes
+    ):
+        test = Test(
+            input_paths[0], input_paths[1], "output/images/", technique, block_size
+        )
         print("Test: " + str(test), end=" - ")
         with ResultsWriter("output/test_results.csv") as f:
             result = test.run()
             print("Result: " + str(result))
             f.write(test, result)
     print("Tests finished")
-
 
 
 if __name__ == "__main__":
