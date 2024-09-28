@@ -1,3 +1,4 @@
+import os
 from bitarray import bitarray
 
 from diskdelta.debug import Debug
@@ -22,6 +23,12 @@ class DiskDelta:
         self.digest_size = digest_size_bytes
         self.known_blocks = BlockHashStore(self.image_block_size, self.digest_size)
 
+        # Check if the initial and target images are the same size
+        initial_image_size = os.path.getsize(initial_image_path)
+        target_image_size = os.path.getsize(target_image_path)
+        if initial_image_size != target_image_size:
+            raise ValueError("Initial and target images are not the same size")
+
         Debug.log("Generating hashes for initial image")
         Debug.increment_indent()
         self.initial_hashes = IndexHashMapper(
@@ -36,10 +43,7 @@ class DiskDelta:
         )
         Debug.increment_indent(-1)
 
-        if self.initial_hashes.size() != self.target_hashes.size():
-            raise ValueError("Initial and target images are not the same size")
-
-        message_builder = MessageBuilder(self.known_blocks, self.initial_hashes.size())
+        message_builder = MessageBuilder(self.known_blocks, initial_image_size)
 
         Debug.log("Building message")
         Debug.increment_indent()

@@ -1,5 +1,4 @@
 from hashlib import sha256
-import math
 import os
 
 from diskdelta.debug import Debug
@@ -34,8 +33,7 @@ class IndexHashMapper:
         self.block_hash_size = hash_size_by_bytes
         self.image_path = image_path
 
-        self.hash_by_index: list[bytes] = []
-        self.indexes_by_hash: dict[bytes, list[bytes]] = {}
+        self.indexes_by_hash: dict[bytes, list[tuple[int, int]]] = {}
 
         if image_path:
             self.load()
@@ -61,16 +59,26 @@ class IndexHashMapper:
             return False
 
         hash = hasher.hash(block)
-        self.hash_by_index.append(hash)
 
         if hash not in self.indexes_by_hash:
             self.indexes_by_hash[hash] = []
 
-        self.indexes_by_hash[hash].append(index)
+        self.add_index_to_rle(self.indexes_by_hash[hash], index)
 
         return True
+    
+    def add_index_to_rle(self, rle: list[tuple[int, int]], index: int):
+        if len(rle) == 0:
+            rle.append((index, 1))
+            return
 
-    def get_indexes_by_hash(self, hash: bytes) -> list:
+        last_index, count = rle[-1]
+        if last_index + count == index:
+            rle[-1] = (last_index, count + 1)
+        else:
+            rle.append((index, 1))
+
+    def get_indexes_by_hash(self, hash: bytes) -> list[tuple[int, int]]:
         """
         Return the list of indexes that have the given hash.
         """
@@ -83,7 +91,11 @@ class IndexHashMapper:
         """
         Return the hash of the block with the given index.
         """
-        return self.hash_by_index[index]
+        with open(self.image_path, "rb") as f:
+            f.seek(index * self.block_literal_size)
+            block = f.read(self.block_literal_size)
+            hasher = Hasher(self.block_hash_size)
+            return hasher.hash(block)
 
     def literal_by_index(self, index: int) -> bytes:
         """
@@ -93,8 +105,8 @@ class IndexHashMapper:
             f.seek(index * self.block_literal_size)
             return f.read(self.block_literal_size)
 
-    def size(self):
-        return len(self.hash_by_index)
+    def image_size(self):
+        return os.path.getsize(self.image_path)
 
     def log_generating_hashes_progress(self, index: int):
         image_bytes_num = os.path.getsize(self.image_path)
@@ -108,11 +120,11 @@ class IndexHashMapper:
         if index == 0:
             Debug.log("    0%... ", end="")
             return
-        
-        progress = int(index/five_percent)*5
+
+        progress = int(index / five_percent) * 5
         if progress > 100:
             return
-        
+
         if progress != 100:
             Debug.log(f"{progress}%... ", end="")
         else:

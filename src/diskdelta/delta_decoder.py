@@ -30,9 +30,13 @@ class DeltaDecoder:
         initial_image: IndexHashMapper = self.delta.initial_hashes
         known_blocks: BlockHashStore = self.delta.known_blocks
 
-        message_builder = diskdelta.MessageBuilder(known_blocks, initial_image.size())
+        message_builder = diskdelta.MessageBuilder(
+            known_blocks, initial_image.image_size()
+        )
 
-        decoded_message: Message = message_builder.get_message_from_bits(file_path, initial_image)
+        decoded_message: Message = message_builder.get_message_from_bits(
+            file_path, initial_image
+        )
         # bit_message = decoded_message.to_bitarray()
 
         return decoded_message

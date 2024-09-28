@@ -264,7 +264,7 @@ class MessageBuilder:
 
         # Check literal block data is in initial image
         elif hashes_on_disk.get_indexes_by_hash(hash):
-            disk_index: int = hashes_on_disk.get_indexes_by_hash(hash)[0]
+            disk_index: int = hashes_on_disk.get_indexes_by_hash(hash)[0][0]
             bytes_needed = (get_index_bits_size(disk_index) + 7) // 8
             inst = Instruction(
                 index, DataType.DiskReference, disk_index.to_bytes(length=bytes_needed)
