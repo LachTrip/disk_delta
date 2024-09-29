@@ -31,7 +31,7 @@ class DeltaDecoder:
         known_blocks: BlockHashStore = self.delta.known_blocks
 
         message_builder = diskdelta.MessageBuilder(
-            known_blocks, initial_image.image_size()
+            known_blocks, int(initial_image.image_size()/initial_image.block_literal_size)
         )
 
         decoded_message: Message = message_builder.get_message_from_bits(

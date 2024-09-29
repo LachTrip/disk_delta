@@ -43,7 +43,7 @@ class DiskDelta:
         )
         Debug.increment_indent(-1)
 
-        message_builder = MessageBuilder(self.known_blocks, initial_image_size)
+        message_builder = MessageBuilder(self.known_blocks, int(initial_image_size/self.image_block_size))
 
         Debug.log("Building message")
         Debug.increment_indent()

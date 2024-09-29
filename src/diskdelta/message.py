@@ -173,10 +173,10 @@ class MessageBuilder:
     def __init__(
         self,
         store: BlockHashStore,
-        image_size: int,
+        image_size_by_blocks: int,
     ):
         self.known_blocks_store = store
-        self.image_size = image_size
+        self.image_size = image_size_by_blocks
 
     def build_message(
         self,
