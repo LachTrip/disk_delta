@@ -73,7 +73,7 @@ class Test:
                 case Technique.LACH:
                     output_path = os.path.join(
                         self.output_folder_path,
-                        f"LACH__{os.path.basename(self.initial_image_path)}__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
+                        f"LACH{self.lach_version}__{os.path.basename(self.initial_image_path)}__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
                     )
 
                     tb = 1024**4
