@@ -50,121 +50,73 @@ class Result:
         return self.__str__()
 
 
-class Test:
+class BaseTest:
     def __init__(
         self,
         initial_image_path: str,
         target_image_path: str,
         output_folder_path: str,
-        technique: Technique,
         block_size: int,
-        lach_version: str,
     ):
         self.initial_image_path = initial_image_path
         self.target_image_path = target_image_path
         self.output_folder_path = output_folder_path
-        self.technique = technique
         self.block_size = block_size
+
+    def run(self) -> Result:
+        raise NotImplementedError("Subclasses should implement this method")
+
+    def __str__(self):
+        raise NotImplementedError("Subclasses should implement this method")
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class LachTest(BaseTest):
+    def __init__(
+        self,
+        initial_image_path: str,
+        target_image_path: str,
+        output_folder_path: str,
+        block_size: int,
+        lach_version: str,
+    ):
+        super().__init__(initial_image_path, target_image_path, output_folder_path, block_size)
         self.lach_version = lach_version
 
     def run(self) -> Result:
         try:
-            match self.technique:
-                case Technique.LACH:
-                    output_path = os.path.join(
-                        self.output_folder_path,
-                        f"LACH{self.lach_version}__{os.path.basename(self.initial_image_path)}__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
-                    )
+            output_path = os.path.join(
+                self.output_folder_path,
+                f"LACH{self.lach_version}__{os.path.basename(self.initial_image_path)}__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
+            )
 
-                    tb = 1024**4
-                    # Assuming drive TBW is 100,000 (very high)
-                    self.digest_size = math.ceil(
-                        2 * math.log2(100000 * tb / self.block_size)
-                    )
+            tb = 1024**4
+            # Assuming drive TBW is 100,000 (very high)
+            self.digest_size = math.ceil(
+                2 * math.log2(100000 * tb / self.block_size)
+            )
 
-                    time_start = time.perf_counter()
+            time_start = time.perf_counter()
 
-                    disk_delta = diskdelta.DiskDelta(
-                        self.initial_image_path,
-                        self.target_image_path,
-                        self.block_size,
-                        self.digest_size,
-                    )
-                    disk_delta.write_message_to_file(output_path)
+            disk_delta = diskdelta.DiskDelta(
+                self.initial_image_path,
+                self.target_image_path,
+                self.block_size,
+                self.digest_size,
+            )
+            disk_delta.write_message_to_file(output_path)
 
-                    time_end = time.perf_counter()
+            time_end = time.perf_counter()
 
-                    compressed_size = os.path.getsize(output_path)
-                    compression_ratio = (
-                        os.path.getsize(self.target_image_path) / compressed_size
-                    )
-                    compression_time = time_end - time_start
+            compressed_size = os.path.getsize(output_path)
+            compression_ratio = (
+                os.path.getsize(self.target_image_path) / compressed_size
+            )
+            compression_time = time_end - time_start
 
-                    return Result(compressed_size, compression_ratio, compression_time)
-                case Technique.XZ:
-                    output_path = os.path.join(
-                        self.output_folder_path,
-                        f"XZ__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
-                    )
-
-                    time_start = time.perf_counter()
-
-                    subprocess.run(
-                        [
-                            "xz",
-                            "-k",
-                            "-z",
-                            "-9",
-                            "-e",
-                            "-c",
-                            "-T0",
-                            f"-B{self.block_size}",
-                            self.target_image_path,
-                        ],
-                        stdout=open(output_path, "wb"),
-                        check=True,
-                    )
-
-                    time_end = time.perf_counter()
-
-                    compressed_size = os.path.getsize(output_path)
-                    compression_ratio = (
-                        os.path.getsize(self.target_image_path) / compressed_size
-                    )
-                    compression_time = time_end - time_start
-
-                    return Result(compressed_size, compression_ratio, compression_time)
-                case Technique.RSYNC:
-                    output_path = os.path.join(
-                        self.output_folder_path,
-                        f"RSYNC__{os.path.basename(self.initial_image_path)}__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
-                    )
-
-                    time_start = time.perf_counter()
-
-                    subprocess.run(
-                        [
-                            "rsync",
-                            "--no-whole-file",
-                            f"--block-size={self.block_size}",
-                            self.initial_image_path,
-                            self.target_image_path,
-                            output_path,
-                        ],
-                        check=True,
-                    )
-
-                    time_end = time.perf_counter()
-
-                    compressed_size = os.path.getsize(output_path)
-                    compression_ratio = (
-                        os.path.getsize(self.target_image_path) / compressed_size
-                    )
-                    compression_time = time_end - time_start
-
-                    return Result(compressed_size, compression_ratio, compression_time)
-                case _:
-                    raise ValueError("Invalid technique")
+            return Result(compressed_size, compression_ratio, compression_time)
         except Exception as e:
             print(f"Error during test run: {e}")
             raise
@@ -176,12 +128,124 @@ class Test:
             f"{sha256(open(self.initial_image_path, 'rb').read()).hexdigest()},"
             f"{os.path.basename(self.target_image_path)},"
             f"{sha256(open(self.target_image_path, 'rb').read()).hexdigest()},"
-            f"{self.technique.value + self.lach_version},"  # version is empty for non-LACH techniques
+            f"{Technique.LACH.value + self.lach_version},"
             f"{self.block_size}"
         )
 
-    def __repr__(self):
-        return self.__str__()
+
+class XzTest(BaseTest):
+    def __init__(
+        self,
+        initial_image_path: str,
+        target_image_path: str,
+        output_folder_path: str,
+        block_size: int,
+        xz_level: int,
+    ):
+        super().__init__(initial_image_path, target_image_path, output_folder_path, block_size)
+        self.xz_level = xz_level
+
+    def run(self) -> Result:
+        try:
+            output_path = os.path.join(
+                self.output_folder_path,
+                f"XZ__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
+            )
+
+            time_start = time.perf_counter()
+
+            try:
+                subprocess.run(
+                    [
+                        "xz",
+                        "-k",
+                        "-z",
+                        f"-{self.xz_level}",
+                        "-e",
+                        "-c",
+                        "-T0",
+                        f"--block-size={self.block_size}",
+                        self.target_image_path,
+                    ],
+                    stdout=open(output_path, "wb"),
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True,
+                )
+            except subprocess.CalledProcessError as e:
+                print(f"Error: {e.stderr}")
+                raise
+
+            time_end = time.perf_counter()
+
+            compressed_size = os.path.getsize(output_path)
+            compression_ratio = (
+                os.path.getsize(self.target_image_path) / compressed_size
+            )
+            compression_time = time_end - time_start
+
+            return Result(compressed_size, compression_ratio, compression_time)
+        except Exception as e:
+            print(f"Error during test run: {e}")
+            raise
+
+    def __str__(self):
+        return (
+            f"{os.path.getsize(self.initial_image_path)},"
+            f"{os.path.basename(self.initial_image_path)},"
+            f"{sha256(open(self.initial_image_path, 'rb').read()).hexdigest()},"
+            f"{os.path.basename(self.target_image_path)},"
+            f"{sha256(open(self.target_image_path, 'rb').read()).hexdigest()},"
+            f"{Technique.XZ.value + str(self.xz_level)},"
+            f"{self.block_size}"
+        )
+
+
+class RsyncTest(BaseTest):
+    def run(self) -> Result:
+        try:
+            output_path = os.path.join(
+                self.output_folder_path,
+                f"RSYNC__{os.path.basename(self.initial_image_path)}__{os.path.basename(self.target_image_path)}__{self.block_size}B_Block",
+            )
+
+            time_start = time.perf_counter()
+
+            subprocess.run(
+                [
+                    "rsync",
+                    "--no-whole-file",
+                    f"--block-size={self.block_size}",
+                    self.initial_image_path,
+                    self.target_image_path,
+                    output_path,
+                ],
+                check=True,
+            )
+
+            time_end = time.perf_counter()
+
+            compressed_size = os.path.getsize(output_path)
+            compression_ratio = (
+                os.path.getsize(self.target_image_path) / compressed_size
+            )
+            compression_time = time_end - time_start
+
+            return Result(compressed_size, compression_ratio, compression_time)
+        except Exception as e:
+            print(f"Error during test run: {e}")
+            raise
+
+    def __str__(self):
+        return (
+            f"{os.path.getsize(self.initial_image_path)},"
+            f"{os.path.basename(self.initial_image_path)},"
+            f"{sha256(open(self.initial_image_path, 'rb').read()).hexdigest()},"
+            f"{os.path.basename(self.target_image_path)},"
+            f"{sha256(open(self.target_image_path, 'rb').read()).hexdigest()},"
+            f"{Technique.RSYNC.value},"
+            f"{self.block_size}"
+        )
 
 
 class ResultsWriter:
@@ -215,11 +279,11 @@ class ResultsWriter:
             )
         self.file.seek(0, 2)
 
-    def write(self, test: Test, result: Result):
+    def write(self, test: BaseTest, result: Result):
         self.file.write(str(test) + ", " + str(result) + "\n")
 
 
-def load_test_config() -> tuple[list[tuple[str, str]], list[Technique], list[int], str]:
+def load_test_config() -> tuple[list[tuple[str, str]], list[Technique], list[int], str, int]:
     with open("config/test.yaml", "r") as config_file:
         config = yaml.safe_load(config_file)
 
@@ -238,8 +302,9 @@ def load_test_config() -> tuple[list[tuple[str, str]], list[Technique], list[int
     ]
 
     lach_version = str(config["lach_version"])
+    xz_level = int(config["xz_level"])
 
-    return input_path_couples, techniques, block_sizes, lach_version
+    return input_path_couples, techniques, block_sizes, lach_version, xz_level
 
 def load_completed_tests(file_path: str) -> set:
     if not os.path.exists(file_path):
@@ -251,21 +316,38 @@ def load_completed_tests(file_path: str) -> set:
         return {tuple(row[:len(TEST_HEADERS)]) for row in reader}
 
 def main():
-    input_path_couples, techniques, block_sizes, lach_version = load_test_config()
+    input_path_couples, techniques, block_sizes, lach_version, xz_level = load_test_config()
     completed_tests = load_completed_tests("output/test_results.csv")
 
     print("Running tests...")
     for input_paths, technique, block_size in itertools.product(
         input_path_couples, techniques, block_sizes
     ):
-        test = Test(
-            input_paths[0],
-            input_paths[1],
-            "output/images/",
-            technique,
-            block_size,
-            lach_version if technique == Technique.LACH else "",
-        )
+        if technique == Technique.LACH:
+            test = LachTest(
+                input_paths[0],
+                input_paths[1],
+                "output/images/",
+                block_size,
+                lach_version,
+            )
+        elif technique == Technique.XZ:
+            test = XzTest(
+                input_paths[0],
+                input_paths[1],
+                "output/images/",
+                block_size,
+                xz_level,
+            )
+        elif technique == Technique.RSYNC:
+            test = RsyncTest(
+                input_paths[0],
+                input_paths[1],
+                "output/images/",
+                block_size,
+            )
+        else:
+            raise ValueError("Invalid technique")
 
         test_str = str(test)
         test_tuple = tuple(test_str.split(","))
