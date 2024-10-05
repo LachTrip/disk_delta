@@ -146,6 +146,8 @@ class XzTest(BaseTest):
         self.xz_level = xz_level
 
     def run(self) -> Result:
+        if self.block_size == 1:
+            return Result(-1, -1, -1)
         try:
             output_path = os.path.join(
                 self.output_folder_path,
@@ -174,7 +176,7 @@ class XzTest(BaseTest):
                 )
             except subprocess.CalledProcessError as e:
                 print(f"Error: {e.stderr}")
-                raise
+                return Result(-1, -1, -1)
 
             time_end = time.perf_counter()
 
@@ -211,18 +213,22 @@ class RsyncTest(BaseTest):
 
             time_start = time.perf_counter()
 
-            subprocess.run(
-                [
-                    "rsync",
-                    "--no-whole-file",
-                    f"--block-size={self.block_size}",
-                    self.initial_image_path,
-                    self.target_image_path,
-                    output_path,
-                ],
-                check=True,
-            )
-
+            try:
+                subprocess.run(
+                    [
+                        "rsync",
+                        "--no-whole-file",
+                        f"--block-size={self.block_size}",
+                        self.initial_image_path,
+                        self.target_image_path,
+                        output_path,
+                    ],
+                    check=True,
+                )
+            except subprocess.CalledProcessError as e:
+                print(f"Error: {e.stderr}")
+                return Result(-1, -1, -1)
+            
             time_end = time.perf_counter()
 
             compressed_size = os.path.getsize(output_path)
