@@ -342,9 +342,10 @@ def main():
         load_test_config()
     )
     completed_tests = load_completed_tests("output/test_results")
-    now = datetime.datetime.now()
-    test_output_path = f"output/test_results/{now.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
-
+    now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    test_output_path = f"output/test_results/{now}.csv"
+    deltas_output_path = f"output/delta/{now}"
+    os.makedirs(deltas_output_path, exist_ok=True)
     print("Running tests...")
     for input_paths, technique, block_size in itertools.product(
         input_path_couples, techniques, block_sizes
@@ -353,7 +354,7 @@ def main():
             test = LachTest(
                 input_paths[0],
                 input_paths[1],
-                "output/images/",
+                deltas_output_path,
                 block_size,
                 lach_version,
             )
@@ -361,7 +362,7 @@ def main():
             test = XzTest(
                 input_paths[0],
                 input_paths[1],
-                "output/images/",
+                deltas_output_path,
                 block_size,
                 xz_level,
             )
@@ -369,7 +370,7 @@ def main():
             test = RsyncTest(
                 input_paths[0],
                 input_paths[1],
-                "output/images/",
+                deltas_output_path,
                 block_size,
             )
         else:
