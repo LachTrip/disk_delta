@@ -82,7 +82,9 @@ class LachTest(BaseTest):
         block_size: int,
         lach_version: str,
     ):
-        super().__init__(initial_image_path, target_image_path, output_folder_path, block_size)
+        super().__init__(
+            initial_image_path, target_image_path, output_folder_path, block_size
+        )
         self.lach_version = lach_version
 
     def run(self) -> Result:
@@ -94,9 +96,7 @@ class LachTest(BaseTest):
 
             tb = 1024**4
             # Assuming drive TBW is 100,000 (very high)
-            self.digest_size = math.ceil(
-                2 * math.log2(100000 * tb / self.block_size)
-            )
+            self.digest_size = math.ceil(2 * math.log2(100000 * tb / self.block_size))
 
             time_start = time.perf_counter()
 
@@ -142,7 +142,9 @@ class XzTest(BaseTest):
         block_size: int,
         xz_level: int,
     ):
-        super().__init__(initial_image_path, target_image_path, output_folder_path, block_size)
+        super().__init__(
+            initial_image_path, target_image_path, output_folder_path, block_size
+        )
         self.xz_level = xz_level
 
     def run(self) -> Result:
@@ -219,16 +221,16 @@ class RsyncTest(BaseTest):
                         "rsync",
                         "--no-whole-file",
                         f"--block-size={self.block_size}",
-                        self.initial_image_path,
+                        f"--write-batch={output_path}",
                         self.target_image_path,
-                        output_path,
+                        self.initial_image_path,
                     ],
                     check=True,
                 )
             except subprocess.CalledProcessError as e:
                 print(f"Error: {e.stderr}")
                 return Result(-1, -1, -1)
-            
+
             time_end = time.perf_counter()
 
             compressed_size = os.path.getsize(output_path)
@@ -289,7 +291,9 @@ class ResultsWriter:
         self.file.write(str(test) + ", " + str(result) + "\n")
 
 
-def load_test_config() -> tuple[list[tuple[str, str]], list[Technique], list[int], str, int]:
+def load_test_config() -> (
+    tuple[list[tuple[str, str]], list[Technique], list[int], str, int]
+):
     with open("config/test.yaml", "r") as config_file:
         config = yaml.safe_load(config_file)
 
@@ -300,30 +304,46 @@ def load_test_config() -> tuple[list[tuple[str, str]], list[Technique], list[int
     image_size = os.path.getsize(input_path_couples[0][0])
     block_sizes = [
         (
-            1
-            if size == 1
-            else image_size if size == "image_size" else int(math.sqrt(image_size))
+            size if isinstance(size, int) else
+            image_size if size == "image_size" else
+            int(math.sqrt(image_size)) if size == "sqrt_image_size" else
+            None
         )
         for size in config["block_sizes"]
     ]
 
+    if None in block_sizes:
+        raise ValueError("Invalid block size")
+
     lach_version = str(config["lach_version"])
     xz_level = int(config["xz_level"])
 
-    return input_path_couples, techniques, block_sizes, lach_version, xz_level
+    return input_path_couples, techniques, block_sizes, lach_version, xz_level # type: ignore
 
-def load_completed_tests(file_path: str) -> set:
-    if not os.path.exists(file_path):
-        return set()
 
+def load_completed_tests_from_file(file_path: str) -> set:
     with open(file_path, "r") as file:
         reader = csv.reader(file)
         next(reader)  # Skip the header
-        return {tuple(row[:len(TEST_HEADERS)]) for row in reader}
+        return {tuple(row[: len(TEST_HEADERS)]) for row in reader}
+
+
+def load_completed_tests(directory_path: str) -> set:
+    completed_tests = set()
+    for file_name in os.listdir(directory_path):
+        if file_name.endswith(".csv"):
+            file_path = os.path.join(directory_path, file_name)
+            completed_tests |= load_completed_tests_from_file(file_path)
+    return completed_tests
+
 
 def main():
-    input_path_couples, techniques, block_sizes, lach_version, xz_level = load_test_config()
-    completed_tests = load_completed_tests("output/test_results.csv")
+    input_path_couples, techniques, block_sizes, lach_version, xz_level = (
+        load_test_config()
+    )
+    completed_tests = load_completed_tests("output/test_results")
+    now = datetime.datetime.now()
+    test_output_path = f"output/test_results/{now.strftime('%Y-%m-%d_%H-%M-%S')}.csv"
 
     print("Running tests...")
     for input_paths, technique, block_size in itertools.product(
@@ -363,7 +383,7 @@ def main():
             continue
 
         print("Test: " + str(test), end=" - ")
-        with ResultsWriter("output/test_results.csv") as f:
+        with ResultsWriter(test_output_path) as f:
             result = test.run()
             print("Result: " + str(result))
             f.write(test, result)
