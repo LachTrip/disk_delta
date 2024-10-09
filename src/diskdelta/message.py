@@ -211,6 +211,8 @@ class MessageBuilder:
                     message,
                 )
 
+                self.known_blocks_store.add(updated_hash, target_hashes_map.literal_by_index(disk_index))
+
                 # Update greatest index values
                 changed_block_inst = message.instructions[-1]
                 if changed_block_inst.data_type == DataType.DiskReference:
