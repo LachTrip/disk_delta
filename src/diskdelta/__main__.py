@@ -84,6 +84,7 @@ def simulate_send_disk_delta(
     disk_delta = DiskDelta(
         initial_image_path, target_image_path, block_size, digest_size_bytes
     )
+    disk_delta.build_message()
 
     # write to file as bits
     disk_delta.write_message_to_file(output_path + "_bits")
@@ -114,7 +115,6 @@ def simulate_receive_disk_delta(
     Debug.log("Reconstructing target image")
 
     disk_delta.apply_message(
-        regenerated_message,
         initial_image_path,
         output_path + "_reconstructed_image.img",
     )

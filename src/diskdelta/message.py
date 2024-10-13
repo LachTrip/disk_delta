@@ -37,7 +37,11 @@ class Instruction:
         )
 
     def to_bitarray(
-        self, disk_index_bits: int, disk_ref_bits: int, msg_ref_bits: int
+        self,
+        disk_index_bits: int,
+        disk_ref_bits: int,
+        msg_ref_bits: int,
+        hash_size: int,
     ) -> bitarray:
         # Disk index
         instructionBits = bitarray(f"{self.disk_index:0{disk_index_bits}b}")
@@ -53,6 +57,7 @@ class Instruction:
                 instructionBits.extend(bitarray("01"))
                 data_bits = bitarray()
                 data_bits.frombytes(self.data)
+                data_bits = data_bits[:hash_size]
                 instructionBits.extend(data_bits)
             case DataType.DiskReference:
                 instructionBits.extend(bitarray("10"))
@@ -80,23 +85,31 @@ class Message:
         self.changed_block_index_size = 0
         self.disk_ref_bits_size = 0
         self.msg_ref_bits_size = 0
+        self.hash_size = 0
 
         self.instructions: list[Instruction] = []
         self.hash_to_message_index = {}
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Message):
-            Debug.log("Not instance")
-            return False
+            raise TypeError("Not instance")
+        if self.header_bits_size != other.header_bits_size:
+            raise TypeError(f"Different header bits size: {self.header_bits_size} != {other.header_bits_size}")
+        if self.changed_block_index_size != other.changed_block_index_size:
+            raise TypeError(f"Different changed block index size: {self.changed_block_index_size} != {other.changed_block_index_size}")
+        if self.disk_ref_bits_size != other.disk_ref_bits_size:
+            raise TypeError(f"Different disk ref bits: {self.disk_ref_bits_size} != {other.disk_ref_bits_size}")
+        if self.msg_ref_bits_size != other.msg_ref_bits_size:
+            raise TypeError(f"Different msg ref bits: {self.msg_ref_bits_size} != {other.msg_ref_bits_size}")
+        if self.hash_size != other.hash_size:
+            raise TypeError(f"Different hash size: {self.hash_size} != {other.hash_size}")
         if len(self.instructions) != len(other.instructions):
-            Debug.log("Different lengths")
-            return False
+            raise TypeError(f"Different lengths: {len(self.instructions)} != {len(other.instructions)}")
         for instruction1, instruction2 in zip(self.instructions, other.instructions):
             if instruction1 != instruction2:
-                Debug.log(
+                raise TypeError(
                     f"Different instructions {instruction1.disk_index} {instruction2.disk_index}"
                 )
-                return False
         return True
 
     def write_bits_to_file(self, output_path: str) -> None:
@@ -118,6 +131,7 @@ class Message:
                         self.changed_block_index_size,
                         self.disk_ref_bits_size,
                         self.msg_ref_bits_size,
+                        self.hash_size,
                     )
                 )
             Debug.log("Done.")
@@ -185,6 +199,8 @@ class MessageBuilder:
     ):
         message = Message()
 
+        message.hash_size = self.known_blocks_store.digest_size_bits
+
         greatest_disk_ref: int = 0
         greatest_msg_ref: int = 0
 
@@ -211,7 +227,9 @@ class MessageBuilder:
                     message,
                 )
 
-                self.known_blocks_store.add(updated_hash, target_hashes_map.literal_by_index(disk_index))
+                self.known_blocks_store.add(
+                    updated_hash, target_hashes_map.literal_by_index(disk_index)
+                )
 
                 # Update greatest index values
                 changed_block_inst = message.instructions[-1]
@@ -237,7 +255,7 @@ class MessageBuilder:
         message.msg_ref_bits_size = get_index_bits_size(greatest_msg_ref)
 
         # The number of bits needed to index any changed block.
-        message.changed_block_index_size = get_index_bits_size(disk_index - 1)
+        message.changed_block_index_size = get_index_bits_size(disk_index)
 
         return message
 
@@ -276,8 +294,7 @@ class MessageBuilder:
 
         # Check block hash is in store
         elif known_blocks.contains_hash(hash):
-            digest: bytes = message.hash_to_message_index[hash]
-            inst = Instruction(index, DataType.Hash, digest)
+            inst = Instruction(index, DataType.Hash, hash)
             message.instructions.append(inst)
             message.hash_to_message_index[hash] = len(message.instructions) - 1
 
@@ -298,9 +315,10 @@ class MessageBuilder:
         """
         Debug.log("Reading header")
         message = Message()
-        message.header_bits_size = get_index_bits_size(self.image_size - 1)
+        message.hash_size = self.known_blocks_store.digest_size_bits
+        message.header_bits_size = get_index_bits_size(self.image_size)
         header_size = message.header_bits_size
-        message.changed_block_index_size = get_index_bits_size(self.image_size - 1)
+        message.changed_block_index_size = get_index_bits_size(self.image_size)
 
         Debug.log("Reading instructions")
         with bitbuffer.open(file_path, "r") as f:
@@ -321,9 +339,6 @@ class MessageBuilder:
             message.disk_ref_bits_size = disk_ref_bits
             message.msg_ref_bits_size = msg_ref_bits
 
-            # Read bitarray to get message data
-            hasher = Hasher(self.known_blocks_store.digest_size)
-
             while True:
                 bits = f.read(message.changed_block_index_size)
                 if bits is None:
@@ -338,9 +353,15 @@ class MessageBuilder:
                     break
                 data_type = DataType(int(bits.to01(), 2))
 
+                if disk_index == 41:
+                    print("", end="")
+
+
                 data = self.get_data_by_type(f, data_type, disk_ref_bits, msg_ref_bits)
                 if data is None:
                     break
+                if data_type == DataType.Literal and len(data) != self.known_blocks_store.block_size:
+                    raise ValueError("wtf is going on")
 
                 inst = Instruction(disk_index, data_type, data)
                 message.instructions.append(inst)
@@ -359,16 +380,22 @@ class MessageBuilder:
                 bits = f.read(self.known_blocks_store.block_size * 8)
                 if bits is None:
                     return None
+                if len(bits) != self.known_blocks_store.block_size * 8:
+                    raise ValueError("Invalid literal data size")
                 data = bits.tobytes()
             case DataType.Hash:
-                bits = f.read(self.known_blocks_store.digest_size)
+                bits = f.read(self.known_blocks_store.digest_size_bits)
                 if bits is None:
                     return None
+                if len(bits) != self.known_blocks_store.digest_size_bits:
+                    raise ValueError("Invalid hash data size")
                 data = bits.tobytes()
             case DataType.DiskReference:
                 bits = f.read(disk_ref_bits)
                 if bits is None:
                     return None
+                if len(bits) != disk_ref_bits:
+                    raise ValueError("Invalid disk reference data size")
                 disk_ref_index = int(bits.to01(), 2)
                 bytes_needed = (get_index_bits_size(disk_ref_index) + 7) // 8
                 data = disk_ref_index.to_bytes(bytes_needed)
@@ -376,6 +403,8 @@ class MessageBuilder:
                 bits = f.read(msg_ref_bits)
                 if bits is None:
                     return None
+                if len(bits) != msg_ref_bits:
+                    raise ValueError("Invalid message reference data size")
                 msg_ref_index = int(bits.to01(), 2)
                 bytes_needed = (get_index_bits_size(msg_ref_index) + 7) // 8
                 data = msg_ref_index.to_bytes(bytes_needed)

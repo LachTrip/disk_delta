@@ -29,6 +29,8 @@ class DiskDelta:
         if initial_image_size != target_image_size:
             raise ValueError("Initial and target images are not the same size")
 
+        self.image_size = initial_image_size
+
         Debug.log("Generating hashes for initial image")
         Debug.increment_indent()
         self.initial_hashes = IndexHashMapper(
@@ -43,7 +45,8 @@ class DiskDelta:
         )
         Debug.increment_indent(-1)
 
-        message_builder = MessageBuilder(self.known_blocks, int(initial_image_size/self.image_block_size))
+    def build_message(self):
+        message_builder = MessageBuilder(self.known_blocks, int(self.image_size/self.image_block_size))
 
         Debug.log("Building message")
         Debug.increment_indent()
@@ -62,10 +65,10 @@ class DiskDelta:
         Debug.increment_indent(-1)
 
     def get_decoder(self):
-        return DeltaDecoder(self)
+        return DeltaDecoder(self.initial_hashes, self.known_blocks)
 
     def apply_message(
-        self, message: Message, initial_image_path: str, output_path: str
+        self, initial_image_path: str, output_path: str
     ):
         """
         Apply the message to the initial image to reconstruct the target image.
@@ -82,8 +85,8 @@ class DiskDelta:
 
         # Apply the message to the output file
         with open(output_path, "r+b") as out:
-            for instruction in message.instructions:
-                literal = self.get_literal_from_instruction(instruction, message)
+            for instruction in self.message.instructions:
+                literal = self.get_literal_from_instruction(instruction, self.message)
                 if literal is None:
                     raise ValueError("Data literal not found")
                 out.seek(instruction.disk_index * self.image_block_size)

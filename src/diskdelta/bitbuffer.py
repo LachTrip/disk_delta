@@ -46,46 +46,35 @@ class BitReader:
         bytes_to_read = num_bits // 8
         num_bits -= bytes_to_read * 8
 
+        # read buffer_size chunks at a time
         while self.buffer_index + bytes_to_read > len(self.buffer):
             new_bits = bitarray()
-            new_bits.frombytes(self.buffer[self.buffer_index : len(self.buffer)])
+            new_bits.frombytes(self.buffer[self.buffer_index :])
             bits.extend(new_bits)
-            bytes_to_read -= len(self.buffer) - self.buffer_index
+            bytes_to_read -= (len(self.buffer) - self.buffer_index)
             
             self.buffer = self.file.read(self.buffer_size)
             self.buffer_index = 0
             if len(self.buffer) == 0:
                 return None
-            
+
+        # read rest of needed bytes from buffer
+        if bytes_to_read > 0:
             new_bits = bitarray()
             new_bits.frombytes(
                 self.buffer[self.buffer_index : self.buffer_index + bytes_to_read]
             )
             bits.extend(new_bits)
-
-        if self.buffer_index == len(self.buffer):
-            
-            self.buffer = self.file.read(self.buffer_size)
-            self.buffer_index = 0
-            if len(self.buffer) == 0:
-                return None
-            
-
-        new_bits = bitarray()
-        new_bits.frombytes(
-            self.buffer[self.buffer_index : self.buffer_index + bytes_to_read]
-        )
-        bits.extend(new_bits)
-        self.buffer_index += bytes_to_read
-
+            self.buffer_index += bytes_to_read
+        
+        # ensure buffer is not empty
         if self.buffer_index == len(self.buffer):
             self.buffer = self.file.read(self.buffer_size)
             self.buffer_index = 0
-            if len(self.buffer) == 0:
-                return None
-            
+            if num_bits > 0 and len(self.buffer) == 0:
+                raise ValueError("Not enough bits to read")
 
-        # read remaining bits from the last byte
+        # read rest of needed bits from next byte in buffer
         if num_bits > 0:
             current_byte = self.buffer[self.buffer_index]
             current_bits = bitarray()

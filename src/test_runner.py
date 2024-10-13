@@ -2,6 +2,7 @@ import csv
 import datetime
 from enum import Enum
 from hashlib import sha256
+import hashlib
 import itertools
 import math
 import os
@@ -9,6 +10,11 @@ import diskdelta
 import subprocess
 import time
 import yaml
+
+from diskdelta.block_hash_store import BlockHashStore
+from diskdelta.debug import Debug
+from diskdelta.delta_decoder import DeltaDecoder
+from diskdelta.index_hash_mapper import IndexHashMapper
 
 
 class Technique(Enum):
@@ -106,6 +112,7 @@ class LachTest(BaseTest):
                 self.block_size,
                 self.digest_size,
             )
+            disk_delta.build_message()
             disk_delta.write_message_to_file(output_path)
 
             time_end = time.perf_counter()
@@ -221,7 +228,7 @@ class RsyncTest(BaseTest):
                         "rsync",
                         "--no-whole-file",
                         f"--block-size={self.block_size}",
-                        f"--write-batch={output_path}",
+                        f"--only-write-batch={output_path}",
                         self.target_image_path,
                         self.initial_image_path,
                     ],
@@ -336,12 +343,11 @@ def load_completed_tests(directory_path: str) -> set:
             completed_tests |= load_completed_tests_from_file(file_path)
     return completed_tests
 
-
-def main():
+def test_run_and_write_results():
     input_path_couples, techniques, block_sizes, lach_version, xz_level = (
         load_test_config()
     )
-    completed_tests = load_completed_tests("output/test_results")
+    completed_tests = set() # load_completed_tests("output/test_results")
     now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     test_output_path = f"output/test_results/{now}.csv"
     deltas_output_path = f"output/delta/{now}"
@@ -389,6 +395,104 @@ def main():
             print("Result: " + str(result))
             f.write(test, result)
     print("Tests finished")
+
+def lach_run_and_validate():
+    input_path_couples, techniques, block_sizes, lach_version, xz_level = (
+        load_test_config()
+    )
+    
+    now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    deltas_output_path = f"output/delta/{now}"
+    os.makedirs(deltas_output_path, exist_ok=True)
+    print("Running tests...")
+
+    test_output_path = f"output/test_results/{now}.csv"
+
+    for input_paths, block_size in itertools.product(
+        input_path_couples, block_sizes
+    ):
+        initial_image_path = input_paths[0]
+        target_image_path = input_paths[1]
+        delta_file_name = f"LACH__{os.path.basename(initial_image_path)}__{os.path.basename(target_image_path)}__{block_size}B_Block"
+
+        print("Running test: " + delta_file_name)
+
+        
+
+        delta_output_path = os.path.join(
+            deltas_output_path,
+            delta_file_name,
+        )
+
+        tb = 1024**4
+        # Assuming drive TBW is 100,000 (very high)
+        digest_size = math.ceil(2 * math.log2(100000 * tb / block_size))
+
+        time_start = time.perf_counter()
+
+        sending_disk_delta = diskdelta.DiskDelta(
+            initial_image_path,
+            target_image_path,
+            block_size,
+            digest_size,
+        )
+        sending_disk_delta.build_message()
+        sending_disk_delta.write_message_to_file(delta_output_path)
+
+        time_end = time.perf_counter()
+
+        compressed_size = os.path.getsize(delta_output_path)
+        compression_ratio = (
+            os.path.getsize(target_image_path) / compressed_size
+        )
+        compression_time = time_end - time_start
+    
+        print("Message created")
+
+        reconstuct_directory = f"output/reconstructed/{now}"
+        os.makedirs(reconstuct_directory, exist_ok=True)
+        
+        store = BlockHashStore(block_size, digest_size)
+        initial_hashes = IndexHashMapper(initial_image_path, block_size, digest_size)
+        decoder = DeltaDecoder(initial_hashes, store)
+        message = decoder.get_message_from_bits(delta_output_path)
+
+        # verify the message
+        if sending_disk_delta.message == message:
+            print("Message verified")
+
+        # ensure the output directory exists
+        output_file_path = os.path.join(reconstuct_directory, delta_file_name)
+        os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+
+        # apply message to the image
+        recon_disk_delta = diskdelta.DiskDelta(initial_image_path, target_image_path, block_size, digest_size)
+        recon_disk_delta.message = message
+        recon_disk_delta.known_blocks = store
+        recon_disk_delta.apply_message(initial_image_path, output_file_path)
+
+        # verify the reconstructed image
+        target_hash = hashlib.sha256(open(target_image_path, "rb").read()).hexdigest()
+        recon_hash = hashlib.sha256(open(output_file_path, "rb").read()).hexdigest()
+        if target_hash == recon_hash:
+            print("Reconstructed image verified")
+        else:
+            print("Reconstructed image verification failed")
+
+        with ResultsWriter(test_output_path) as f:
+            test = LachTest(
+                initial_image_path,
+                target_image_path,
+                deltas_output_path,
+                block_size,
+                lach_version,
+            )
+            result = Result(compressed_size, compression_ratio, compression_time)
+            f.write(test, result)
+    
+def main():
+    lach_run_and_validate()
+
 
 
 if __name__ == "__main__":

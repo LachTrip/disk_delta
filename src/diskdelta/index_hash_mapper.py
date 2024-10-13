@@ -1,4 +1,5 @@
 from hashlib import sha256
+import math
 import os
 
 from diskdelta.debug import Debug
@@ -16,7 +17,14 @@ class Hasher:
         """
         Return the hash of the given data.
         """
-        return sha256(data).digest()[0 : self.hash_size]
+        num_bytes = math.ceil(self.hash_size / 8)
+        full_hash = sha256(data).digest()
+        hash_bytes = full_hash[:num_bytes]
+        if self.hash_size % 8 != 0:
+            mask = 0xFF << (8 - (self.hash_size % 8)) & 0xFF
+            hash_bytes = hash_bytes[:-1] + bytes([hash_bytes[-1] & mask])
+
+        return hash_bytes
 
 
 class IndexHashMapper:
